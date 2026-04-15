@@ -61,8 +61,14 @@ const processData = async () => {
       .map(id => id?.trim())
       .filter(id => id && id !== '');
 
-    let tNum = p[12]?.trim() || "0";
-    const teacherId = tNum.startsWith('T') ? tNum : `T${tNum.padStart(2, '0')}`;
+    // BulkTeamForm.vue 의 수정할 부분 (교사 번호 처리)
+
+    // [기본 코드 - T03으로 변환되던 로직]
+    // let tNum = p[12]?.trim() || "0";
+    // const teacherId = tNum.startsWith('T') ? tNum : `T${tNum.padStart(2, '0')}`;
+
+    // [✅ 수정 코드 - 숫자 그대로 저장하는 로직]
+    let teacherId = p[12]?.trim() || "0"; // 엑셀에 적힌 3, 8 등을 그대로 가져옴
 
     const teamData = {
       teamId: p[0].trim(),           

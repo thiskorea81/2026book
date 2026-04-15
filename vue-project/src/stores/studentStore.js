@@ -35,41 +35,57 @@ export const useStudentStore = defineStore('student', {
   }),
 
   actions: {
-    // 1. 내 활동 요약 정보 가져오기
+    // 💡 내 정보 및 교사 정보 조회 (팀 데이터의 담당교사번호 우선)
     async fetchMySummary() {
       if (!this.currentUser.userKey) return;
       this.isLoading = true;
       try {
         let assignedTeacherId = null;
+        let myTeamData = null;
 
-        if (this.currentUser.teamId) {
-          const teamDoc = await getDoc(doc(db, "teams", this.currentUser.teamId));
-          if (teamDoc.exists()) {
-            this.mySummary.team = teamDoc.data();
-            assignedTeacherId = this.mySummary.team.teacherId;
-          }
-        }
-
-        if (!assignedTeacherId) {
-          this.mySummary.isDefaultTeacher = true;
-          const classNum = parseInt(this.currentUser.userKey.substring(1, 3));
+        // 1. 내가 포함된 팀 찾기 (전체 팀 중 members 배열에 내 학번이 있는 팀)
+        const teamQ = query(
+          collection(db, "teams"), 
+          where("members", "array-contains", this.currentUser.userKey)
+        );
+        const teamSnap = await getDocs(teamQ);
+        
+        if (!teamSnap.empty) {
+          myTeamData = teamSnap.docs[0].data();
+          this.currentUser.teamId = myTeamData.teamId;
           
-          if (classNum >= 1 && classNum <= 9) {
-            assignedTeacherId = `T0${classNum}`;
-          } else {
-            assignedTeacherId = 'T00';
+          // 💡 엑셀로 업로드한 '담당교사번호'가 있다면 해당 번호를 교사 ID로 설정
+          if (myTeamData.teacherId !== undefined && myTeamData.teacherId !== null) {
+            assignedTeacherId = String(myTeamData.teacherId);
+            this.mySummary.isDefaultTeacher = false;
           }
-        } else {
-          this.mySummary.isDefaultTeacher = false;
         }
 
+        // 2. 만약 팀이 없거나 담당교사가 지정되지 않았다면 학번 기준 담임 자동 배정
+        if (!assignedTeacherId) {
+          const classNum = parseInt(this.currentUser.userKey.substring(1, 3)) || 0;
+          assignedTeacherId = (classNum >= 1 && classNum <= 9) ? String(classNum) : "0";
+          this.mySummary.isDefaultTeacher = true;
+        }
+
+        // 3. 결정된 assignedTeacherId("0", "1" 등)로 교사 상세 정보 조회
         if (assignedTeacherId) {
           const teacherDoc = await getDoc(doc(db, "users", assignedTeacherId));
           if (teacherDoc.exists()) {
             this.mySummary.teacher = teacherDoc.data();
+          } else {
+            // 교사 데이터가 DB에 없는 경우의 대체 텍스트
+            this.mySummary.teacher = {
+              name: assignedTeacherId === "0" ? "학년부장 선생님" : `${assignedTeacherId}반 담임 선생님`,
+              subject: "과목 정보 없음",
+              role: this.mySummary.isDefaultTeacher ? "기본 배정" : "지도 교사"
+            };
           }
         }
 
+        this.mySummary.team = myTeamData;
+
+        // 4. 활동 기록 현황
         const logQ = query(collection(db, "readingLogs"), where("studentId", "==", this.currentUser.userKey));
         const logSnap = await getDocs(logQ);
         this.mySummary.logsCount = logSnap.size;
@@ -79,13 +95,13 @@ export const useStudentStore = defineStore('student', {
         this.mySummary.hasEval = !evalSnap.empty;
 
       } catch (error) {
-        console.error("현황 로드 실패:", error);
+        console.error("데이터 로드 실패:", error);
       } finally {
         this.isLoading = false;
       }
     },
 
-    // 2. 네이버 도서 검색 API
+    // 도서 검색 API
     async searchBookByISBN(isbn) {
       if (!isbn) return null;
       const clientId = import.meta.env.VITE_NAVER_CLIENT_ID;
@@ -99,87 +115,47 @@ export const useStudentStore = defineStore('student', {
         if (!json.items || json.items.length === 0) return null;
         const item = json.items[0];
         this.searchedBook = {
-          isbn: isbn,
-          title: item.title.replace(/<[^>]*>?/gm, ''),
+          isbn: isbn, title: item.title.replace(/<[^>]*>?/gm, ''),
           author: item.author.replace(/<[^>]*>?/gm, ''),
-          publisher: item.publisher,
-          price: item.discount || item.price || 0
+          publisher: item.publisher, price: item.discount || item.price || 0
         };
         return this.searchedBook;
-      } catch (error) { return null; }
+      } catch (e) { return null; }
     },
 
-    // 3. 💡 폼 제출 및 팀 번호 자동 배정 로직
+    // 폼 제출 처리
     async submitForm(formType, formData) {
       this.isLoading = true;
       try {
-        const commonData = {
-          studentId: this.currentUser.userKey,
-          studentName: this.currentUser.name,
-          createdAt: serverTimestamp(),
-        };
-
+        const commonData = { studentId: this.currentUser.userKey, studentName: this.currentUser.name, createdAt: serverTimestamp() };
+        
         if (formType === '프로그램신청') {
-          // --- 팀 번호 자동 생성 (예: 2026-96) ---
           const year = new Date().getFullYear();
           const teamsSnap = await getDocs(collection(db, "teams"));
-          
           let maxNum = 0;
-          teamsSnap.forEach(docSnap => {
-            const id = docSnap.id;
-            if (id.startsWith(`${year}-`)) {
-              const num = parseInt(id.split('-')[1]);
-              if (!isNaN(num) && num > maxNum) {
-                maxNum = num;
-              }
+          teamsSnap.forEach(d => {
+            if (d.id.startsWith(`${year}-`)) {
+              const n = parseInt(d.id.split('-')[1]);
+              if (!isNaN(n) && n > maxNum) maxNum = n;
             }
           });
-          
           const newTeamId = `${year}-${maxNum + 1}`;
-
-          // 지정된 팀 번호를 문서 ID로 사용하여 teams 컬렉션에 저장
-          await setDoc(doc(db, "teams", newTeamId), {
-            ...commonData,
-            ...formData,
-            teamId: newTeamId,
-            status: 'pending' // 승인 대기 상태
-          });
-
-          // 신청한 학생 본인의 정보에 팀 번호 연동
-          await updateDoc(doc(db, "users", this.currentUser.userKey), {
-            teamId: newTeamId
-          });
-          this.currentUser.teamId = newTeamId; // 로컬 상태 즉시 업데이트
-
-          await this.fetchMySummary(); // 내 정보 즉시 갱신
-          alert(`프로그램 신청이 완료되었습니다! (부여된 팀 번호: ${newTeamId})`);
-
-        } else {
-          // --- 다른 양식 (독서일지, 평가서 등) 저장 ---
-          let collectionName = '';
-          if (formType === '도서신청') collectionName = 'bookApplications';
-          else if (formType === '독서일지') collectionName = 'readingLogs';
-          else if (formType === '자기평가서') collectionName = 'selfEvaluations';
-
-          await addDoc(collection(db, collectionName), { ...commonData, ...formData });
           
+          await setDoc(doc(db, "teams", newTeamId), { ...commonData, ...formData, teamId: newTeamId, status: 'pending' });
+          await updateDoc(doc(db, "users", this.currentUser.userKey), { teamId: newTeamId });
+          this.currentUser.teamId = newTeamId;
+          await this.fetchMySummary();
+        } else {
+          let col = formType === '도서신청' ? 'bookApplications' : (formType === '독서일지' ? 'readingLogs' : 'selfEvaluations');
+          await addDoc(collection(db, col), { ...commonData, ...formData });
           if (formType === '독서일지') await this.fetchMyLogs();
           if (formType === '자기평가서') await this.fetchMySummary();
-          
-          alert(`${formType} 제출이 완료되었습니다!`);
         }
-        
         return true;
-      } catch (error) {
-        console.error("제출 실패:", error);
-        alert("데이터 저장 중 오류가 발생했습니다. 다시 시도해 주세요.");
-        return false;
-      } finally {
-        this.isLoading = false;
-      }
+      } catch (e) { return false; } finally { this.isLoading = false; }
     },
 
-    // 4. 내 독서일지 목록 로드
+    // 일지 목록 조회
     async fetchMyLogs() {
       if (!this.currentUser.userKey) return;
       this.isLoading = true;
@@ -187,7 +163,7 @@ export const useStudentStore = defineStore('student', {
         const q = query(collection(db, "readingLogs"), where("studentId", "==", this.currentUser.userKey), orderBy("date", "desc"));
         const snap = await getDocs(q);
         this.myLogs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (error) { } finally { this.isLoading = false; }
+      } catch (e) {} finally { this.isLoading = false; }
     }
   }
 });
