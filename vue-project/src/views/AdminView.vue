@@ -11,8 +11,12 @@
         @submit="handleBulkCreate"
       />
 
+      <div v-if="adminStore.isLoading" class="bg-white p-12 rounded-xl shadow text-center text-gray-500 font-bold">
+        데이터를 불러오는 중입니다... ⏳
+      </div>
       <UserTable 
-        :users="users"
+        v-else
+        :users="adminStore.users" 
         v-model:selectedKeys="selectedKeys"
         @delete-selected="deleteSelected"
         @delete="deleteUser"
@@ -35,8 +39,7 @@
 import { ref, onMounted } from 'vue';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { db } from '@/firebase'; // Firestore 연결
-import { collection, doc, setDoc, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
+import { useAdminStore } from '@/stores/adminStore'; // 💡 Pinia 스토어 임포트
 
 // 컴포넌트 임포트
 import AdminHeader from '@/components/admin/AdminHeader.vue';
@@ -44,7 +47,7 @@ import BulkCreateForm from '@/components/admin/BulkCreateForm.vue';
 import UserTable from '@/components/admin/UserTable.vue';
 import EditUserModal from '@/components/admin/EditUserModal.vue';
 
-// --- Firebase 보조 앱 설정 (관리자 세션 유지용) ---
+// --- Firebase 보조 앱 설정 (관리자 계정 보호용) ---
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -57,38 +60,21 @@ const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
 const secondaryAuth = getAuth(secondaryApp);
 
 // --- 상태 관리 ---
+const adminStore = useAdminStore(); // 💡 스토어 활성화
+
 const excelData = ref('');
 const isProcessing = ref(false);
 const statusMessage = ref('대기 중');
-const users = ref([]); 
 const selectedKeys = ref([]); 
 const isEditModalOpen = ref(false);
 const currentUserToEdit = ref(null);
 
-// --- 1. 데이터 불러오기 (Read) ---
-const fetchUsers = async () => {
-  statusMessage.value = '목록 불러오는 중...';
-  try {
-    const querySnapshot = await getDocs(collection(db, "users"));
-    const data = [];
-    querySnapshot.forEach((doc) => {
-      data.push(doc.data());
-    });
-    // Key(학번/번호) 순으로 정렬하여 표시
-    users.value = data.sort((a, b) => a.userKey.localeCompare(b.userKey));
-    statusMessage.value = '데이터 로드 완료';
-  } catch (error) {
-    console.error(error);
-    statusMessage.value = '로드 실패';
-  }
-};
-
-// 페이지 로드 시 실행
+// --- 페이지 로드 시 데이터 초기화 ---
 onMounted(() => {
-  fetchUsers();
+  adminStore.initData();
 });
 
-// --- 2. 일괄 생성 및 DB 저장 (Create) ---
+// --- 1. 일괄 생성 및 스토어 저장 (Create) ---
 const handleBulkCreate = async () => {
   const lines = excelData.value.split('\n').filter(line => line.trim() !== '');
   if (!confirm(`${lines.length}줄의 데이터를 처리하시겠습니까?`)) return;
@@ -106,65 +92,63 @@ const handleBulkCreate = async () => {
     const parts = currentLine.split(/\s+/); 
     if (parts.length < 3) continue;
 
-    let userKey, loginId, rawPassword, name, role, subject;
+    let userKey, loginId, rawPassword, name, role, subject, teamId;
     if (parts.length >= 5) { // 교사
       userKey = parts[0]; loginId = parts[1]; rawPassword = parts[2];
       name = parts[3]; role = parts[4]; subject = parts[5] || '-';
+      teamId = null; // 교사는 초기 팀 ID 없음 (teams 컬렉션에서 참조)
     } else { // 학생
-      userKey = parts[0]; loginId = parts[0]; rawPassword = parts[2];
-      name = parts[1]; role = '학생'; subject = '-';
+      userKey = parts[0]; loginId = parts[0]; rawPassword = parts[parts.length - 1];
+      name = parts.slice(1, -1).join(' '); role = '학생'; subject = '-';
+      teamId = null; // 학생도 초기에는 소속 팀 없음
     }
 
     if (rawPassword.length < 6) continue;
-    const email = `${loginId}@sangdang.hs.kr`;
+    const email = loginId.includes('@') ? loginId : `${loginId}@sangdang.hs.kr`;
+
+    const userData = { userKey, loginId, email, name, role, subject, teamId };
 
     try {
-      // (1) Auth 계정 생성
+      // (1) Auth 계정 생성 (보조 앱)
       await createUserWithEmailAndPassword(secondaryAuth, email, rawPassword);
       
-      // (2) Firestore 정보 저장
-      const userData = { userKey, loginId, email, name, role, subject };
-      await setDoc(doc(db, "users", userKey), userData);
-      
-      users.value.push(userData);
+      // (2) 💡 스토어 액션을 통해 Firestore 저장 및 상태 업데이트
+      await adminStore.saveUser(userData);
       successCount++;
     } catch (error) {
       if (error.code === 'auth/email-already-in-use') {
         // 이미 가입된 경우 정보만 업데이트
-        const userData = { userKey, loginId, email, name, role, subject };
-        await setDoc(doc(db, "users", userKey), userData);
-        if(!users.value.find(u => u.userKey === userKey)) users.value.push(userData);
+        await adminStore.saveUser(userData);
       }
     }
+    // 제한 방지를 위한 짧은 딜레이
     await new Promise(r => setTimeout(r, 100));
   }
 
   isProcessing.value = false;
-  statusMessage.value = `완료 (${successCount}명 저장)`;
+  statusMessage.value = `완료 (${successCount}명 반영)`;
   excelData.value = '';
-  users.value.sort((a, b) => a.userKey.localeCompare(b.userKey));
 };
 
-// --- 3. 개별 및 선택 삭제 (Delete) ---
+// --- 2. 개별 및 선택 삭제 (Delete) ---
 const deleteUser = async (key) => {
-  if (confirm(`${key} 사용자를 DB에서 영구 삭제하시겠습니까?`)) {
+  if (confirm(`${key} 사용자를 시스템에서 영구 삭제하시겠습니까?`)) {
     try {
-      await deleteDoc(doc(db, "users", key));
-      users.value = users.value.filter(u => u.userKey !== key);
+      await adminStore.removeUser(key); // 💡 스토어 액션 호출
+      selectedKeys.value = selectedKeys.value.filter(k => k !== key);
     } catch (e) { alert('삭제 실패'); }
   }
 };
 
 const deleteSelected = async () => {
-  if (!confirm(`${selectedKeys.value.length}명을 삭제하시겠습니까?`)) return;
+  if (!confirm(`선택한 ${selectedKeys.value.length}명을 일괄 삭제하시겠습니까?`)) return;
   for (const key of selectedKeys.value) {
-    await deleteDoc(doc(db, "users", key));
+    await adminStore.removeUser(key); // 💡 스토어 액션 호출
   }
-  users.value = users.value.filter(u => !selectedKeys.value.includes(u.userKey));
   selectedKeys.value = [];
 };
 
-// --- 4. 정보 수정 (Update) ---
+// --- 3. 정보 수정 (Update) ---
 const openEditModal = (user) => {
   currentUserToEdit.value = user;
   isEditModalOpen.value = true;
@@ -172,15 +156,10 @@ const openEditModal = (user) => {
 
 const saveEdit = async (updatedData) => {
   try {
-    const userRef = doc(db, "users", updatedData.userKey);
-    await updateDoc(userRef, {
-      name: updatedData.name,
-      role: updatedData.role,
-      subject: updatedData.subject
-    });
-    const idx = users.value.findIndex(u => u.userKey === updatedData.userKey);
-    if (idx !== -1) users.value[idx] = { ...updatedData };
+    await adminStore.saveUser(updatedData); // 💡 스토어 액션 호출
     isEditModalOpen.value = false;
-  } catch (e) { alert('수정 실패'); }
+  } catch (e) { 
+    alert('수정 실패'); 
+  }
 };
 </script>

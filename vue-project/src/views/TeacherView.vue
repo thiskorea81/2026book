@@ -1,47 +1,45 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
+  <div class="min-h-screen bg-gray-50 font-sans">
+    
     <nav class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center">
       <h1 class="text-xl font-bold text-blue-600">상당고 특색프로그램 (교사용)</h1>
-      <button @click="handleLogout" class="text-sm text-gray-500 hover:text-red-500 transition-colors">로그아웃</button>
+      
+      <div class="space-x-4">
+        <button @click="goToChangePassword" class="text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors">
+          비밀번호 변경
+        </button>
+        <button @click="handleLogout" class="text-sm font-medium text-gray-500 hover:text-red-500 transition-colors">
+          로그아웃
+        </button>
+      </div>
     </nav>
 
-    <main class="max-w-6xl mx-auto p-6">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h2 class="text-gray-500 text-sm font-medium">전체 신청 현황</h2>
-          <p class="text-3xl font-bold text-gray-800 mt-2">128명</p>
-        </div>
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h2 class="text-gray-500 text-sm font-medium">미확인 보고서</h2>
-          <p class="text-3xl font-bold text-orange-500 mt-2">12건</p>
-        </div>
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h2 class="text-gray-500 text-sm font-medium">진행 중인 프로그램</h2>
-          <p class="text-3xl font-bold text-green-500 mt-2">4개</p>
-        </div>
-      </div>
-
-      <div class="mt-10">
-        <h3 class="text-lg font-bold text-gray-700 mb-4">주요 관리 메뉴</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <button class="p-4 bg-blue-50 text-blue-700 rounded-lg font-medium hover:bg-blue-100 transition-all text-left">
-            📁 프로그램 개설 및 수정
-          </button>
-          <button class="p-4 bg-blue-50 text-blue-700 rounded-lg font-medium hover:bg-blue-100 transition-all text-left">
-            📝 학생 보고서 검토 및 승인
-          </button>
-        </div>
+    <main class="max-w-6xl mx-auto p-6 mt-8">
+      <div class="bg-white p-8 rounded-xl shadow-sm border border-gray-100 text-center">
+        <h2 class="text-2xl font-bold text-gray-800">선생님, 환영합니다!</h2>
+        <p class="text-gray-500 mt-2">이곳에 향후 특색 프로그램 관리, 보고서 승인 기능이 추가될 예정입니다.</p>
       </div>
     </main>
+
   </div>
 </template>
 
 <script setup>
 import { useRouter } from 'vue-router';
+// Firebase 로그아웃 기능을 사용하시려면 아래 주석을 풀고 연결하세요
+// import { auth } from '@/firebase'; 
+// import { signOut } from 'firebase/auth';
+
 const router = useRouter();
 
-const handleLogout = () => {
+// 💡 비밀번호 변경 페이지로 이동
+const goToChangePassword = () => {
+  router.push('/change-password');
+};
+
+const handleLogout = async () => {
   if (confirm('로그아웃 하시겠습니까?')) {
+    // await signOut(auth); // 실제 연동 시 주석 해제
     router.push('/login');
   }
 };
