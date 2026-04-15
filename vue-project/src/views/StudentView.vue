@@ -1,41 +1,102 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <nav class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center">
-      <h1 class="text-xl font-bold text-green-600">상당고 특색프로그램 (학생용)</h1>
-      <button @click="handleLogout" class="text-sm text-gray-500 hover:text-red-500 transition-colors">로그아웃</button>
+  <div class="min-h-screen bg-gray-50 font-sans">
+    <nav class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+      <h1 class="text-xl font-bold text-green-600 flex items-center"><span class="mr-2">🌱</span> 상당고 학년특색프로그램</h1>
+      <div class="space-x-4">
+        <button @click="router.push('/change-password')" class="text-sm font-medium text-gray-500 hover:text-green-600">비밀번호 변경</button>
+        <button @click="handleLogout" class="text-sm font-medium text-gray-500 hover:text-red-500">로그아웃</button>
+      </div>
     </nav>
 
-    <main class="max-w-4xl mx-auto p-6">
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center mb-8">
-        <h2 class="text-2xl font-bold text-gray-800">환영합니다! 👋</h2>
-        <p class="text-gray-500 mt-2">현재 참여 가능한 프로그램이 2개 있습니다.</p>
+    <div v-if="isUserLoading" class="flex flex-col justify-center items-center h-[60vh] text-green-600 font-bold">
+      <svg class="animate-spin h-10 w-10 mb-4" viewBox="0 0 24 24"></svg>
+      <p>학생 정보를 불러오는 중...</p>
+    </div>
+
+    <main v-else class="max-w-4xl mx-auto p-6 mt-4">
+      <div class="mb-6 flex justify-between items-end">
+        <div>
+          <h2 class="text-2xl font-bold text-gray-800">반가워요, <span class="text-green-600">{{ studentStore.currentUser.name }}</span>!</h2>
+          <p class="text-sm text-gray-500">학번: {{ studentStore.currentUser.userKey }}</p>
+        </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div class="text-3xl mb-4">🚀</div>
-          <h3 class="text-lg font-bold text-gray-800">프로그램 신청</h3>
-          <p class="text-sm text-gray-500 mt-1">새로운 학년 특색 활동에 참여하세요.</p>
-          <button class="mt-4 w-full py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 transition-colors">신청하기</button>
+      <div class="flex bg-white rounded-xl shadow-sm overflow-hidden mb-6 border border-gray-200">
+        <button v-for="tab in tabs" :key="tab.id" @click="activeTab = tab.id"
+          class="flex-1 py-4 text-sm font-bold text-center transition-all border-b-4"
+          :class="activeTab === tab.id ? 'border-green-500 text-green-600 bg-green-50/50' : 'border-transparent text-gray-500 hover:bg-gray-50'">
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 relative">
+        <div v-if="studentStore.isLoading" class="absolute inset-0 bg-white/80 flex items-center justify-center z-10 rounded-xl">
+          <p class="text-green-600 font-bold">데이터 로드 중...</p>
         </div>
 
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div class="text-3xl mb-4">📄</div>
-          <h3 class="text-lg font-bold text-gray-800">활동 보고서 제출</h3>
-          <p class="text-sm text-gray-500 mt-1">참여한 활동의 결과를 기록하고 제출하세요.</p>
-          <button class="mt-4 w-full py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors">작성하기</button>
-        </div>
+        <MyInfo v-if="activeTab === 'myinfo'" />
+        <ProgramApplyForm v-else-if="activeTab === 'program'" />
+        <BookApplyForm v-else-if="activeTab === 'book'" />
+        <ReadingLogForm v-else-if="activeTab === 'log'" />
+        <ReadingLogList v-else-if="activeTab === 'history'" />
+        <SelfEvalForm v-else-if="activeTab === 'eval'" />
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
+import { ref, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
-const router = useRouter();
+import { useStudentStore } from '@/stores/studentStore';
+import { auth, db } from '@/firebase';
+import { signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
-const handleLogout = () => {
+import MyInfo from '@/components/student/MyInfo.vue';
+import ProgramApplyForm from '@/components/student/ProgramApplyForm.vue';
+import BookApplyForm from '@/components/student/BookApplyForm.vue';
+import ReadingLogForm from '@/components/student/ReadingLogForm.vue';
+import ReadingLogList from '@/components/student/ReadingLogList.vue';
+import SelfEvalForm from '@/components/student/SelfEvalForm.vue';
+
+const router = useRouter();
+const studentStore = useStudentStore();
+const isUserLoading = ref(true);
+const activeTab = ref('myinfo');
+
+const tabs = [
+  { id: 'myinfo', label: '👤 내 정보' },
+  { id: 'program', label: '🚀 신청' },
+  { id: 'book', label: '📚 도서' },
+  { id: 'log', label: '📝 일지 작성' },
+  { id: 'history', label: '📖 기록' },
+  { id: 'eval', label: '✅ 평가서' }
+];
+
+watch(activeTab, (newTab) => {
+  if (newTab === 'myinfo') studentStore.fetchMySummary();
+  if (newTab === 'history') studentStore.fetchMyLogs();
+});
+
+onMounted(() => {
+  const unsubscribe = auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      const userId = user.email.split('@')[0];
+      const userDoc = await getDoc(doc(db, "users", userId));
+      if (userDoc.exists()) {
+        studentStore.currentUser = userDoc.data();
+        await studentStore.fetchMySummary();
+      }
+      isUserLoading.value = false;
+    } else { router.push('/login'); }
+  });
+  return () => unsubscribe();
+});
+
+const handleLogout = async () => {
   if (confirm('로그아웃 하시겠습니까?')) {
+    await signOut(auth);
     router.push('/login');
   }
 };
