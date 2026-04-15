@@ -20,16 +20,35 @@
           👨‍🏫 교사 관리
         </button>
         <button 
+          @click="changeTab('team')"
+          class="flex-1 py-4 text-sm font-bold text-center transition-all border-b-4"
+          :class="activeTab === 'team' ? 'border-purple-600 text-purple-700 bg-purple-50/30' : 'border-transparent text-gray-500 hover:bg-gray-50'"
+        >
+          🚀 팀 관리
+        </button>
+        <button 
           @click="changeTab('settings')"
           class="flex-1 py-4 text-sm font-bold text-center transition-all border-b-4"
           :class="activeTab === 'settings' ? 'border-green-600 text-green-700 bg-green-50/30' : 'border-transparent text-gray-500 hover:bg-gray-50'"
         >
-          ⚙️ 시스템 API 설정
+          ⚙️ 시스템 설정
         </button>
       </div>
 
       <template v-if="activeTab === 'settings'">
         <SystemSettings />
+      </template>
+
+      <template v-else-if="activeTab === 'team'">
+        <BulkTeamForm />
+        
+        <TeamTable 
+          :teams="adminStore.teams"
+          v-model:selectedKeys="selectedTeamKeys"
+          @delete-selected="deleteSelectedTeams"
+          @delete="deleteTeam"
+          @edit="openEditTeamModal"
+        />
       </template>
 
       <template v-else>
@@ -61,7 +80,14 @@
       :isOpen="isEditModalOpen"
       :user="currentUserToEdit"
       @close="isEditModalOpen = false"
-      @save="saveEdit"
+      @save="saveUserEdit"
+    />
+
+    <EditTeamModal 
+      :isOpen="isEditTeamModalOpen"
+      :team="currentTeamToEdit"
+      @close="isEditTeamModalOpen = false"
+      @save="saveTeamEdit"
     />
 
   </div>
@@ -69,18 +95,21 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { useAdminStore } from '@/stores/adminStore';
 
 // 컴포넌트 임포트
 import AdminHeader from '@/components/admin/AdminHeader.vue';
 import BulkCreateForm from '@/components/admin/BulkCreateForm.vue';
+import BulkTeamForm from '@/components/admin/BulkTeamForm.vue'; 
 import UserTable from '@/components/admin/UserTable.vue';
+import TeamTable from '@/components/admin/TeamTable.vue';
 import EditUserModal from '@/components/admin/EditUserModal.vue';
-import SystemSettings from '@/components/admin/SystemSettings.vue'; // 시스템 설정 컴포넌트
+import EditTeamModal from '@/components/admin/EditTeamModal.vue';
+import SystemSettings from '@/components/admin/SystemSettings.vue';
 
-// --- Firebase 보조 앱 설정 (로컬 스토리지 동적 적용) ---
+// --- Firebase 보조 앱 설정 (계정 일괄 생성용, 로컬 설정 우선 적용) ---
 const savedConfig = localStorage.getItem('custom_firebase_config');
 const firebaseConfig = savedConfig ? JSON.parse(savedConfig) : {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -91,15 +120,27 @@ const firebaseConfig = savedConfig ? JSON.parse(savedConfig) : {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// 보조 앱 생성 (이미 있으면 재사용)
-const secondaryApp = getApps().find(app => app.name === "SecondaryApp") 
-  || initializeApp(firebaseConfig, "SecondaryApp");
+const secondaryApp = getApps().find(app => app.name === "SecondaryApp") || initializeApp(firebaseConfig, "SecondaryApp");
 const secondaryAuth = getAuth(secondaryApp);
 
-// --- 상태 관리 ---
+// --- 전역 상태 관리 ---
 const adminStore = useAdminStore();
-
 const activeTab = ref('student');
+
+// 탭 변경 시 선택 항목 초기화
+const changeTab = (tab) => {
+  activeTab.value = tab;
+  selectedKeys.value = []; 
+  selectedTeamKeys.value = [];
+};
+
+onMounted(() => {
+  adminStore.initData();
+});
+
+// ==========================================
+// 1. 사용자 (학생/교사) 관리 로직
+// ==========================================
 const excelData = ref('');
 const isProcessing = ref(false);
 const statusMessage = ref('대기 중');
@@ -107,18 +148,6 @@ const selectedKeys = ref([]);
 const isEditModalOpen = ref(false);
 const currentUserToEdit = ref(null);
 
-// 탭 변경 시 선택 초기화
-const changeTab = (tab) => {
-  activeTab.value = tab;
-  selectedKeys.value = []; 
-};
-
-// --- 페이지 로드 시 데이터 초기화 ---
-onMounted(() => {
-  adminStore.initData();
-});
-
-// --- 1. 일괄 생성 및 스토어 저장 ---
 const handleBulkCreate = async () => {
   const lines = excelData.value.split('\n').filter(line => line.trim() !== '');
   if (!confirm(`${lines.length}줄의 데이터를 처리하시겠습니까?`)) return;
@@ -131,7 +160,6 @@ const handleBulkCreate = async () => {
     statusMessage.value = `${i + 1} / ${lines.length} 처리 중...`;
     const currentLine = lines[i].trim();
 
-    // 헤더 패스
     if (currentLine.includes('학번') || currentLine.includes('교사번호') || currentLine.includes('비밀번호')) {
       skippedCount++;
       continue;
@@ -145,12 +173,13 @@ const handleBulkCreate = async () => {
 
     let userKey, loginId, rawPassword, name, role, subject, teamId;
     
-    // 포맷 분기
     if (parts.length >= 5) { 
+      // 교사 포맷
       userKey = parts[0]; loginId = parts[1]; rawPassword = parts[2];
       name = parts[3]; role = parts[4]; subject = parts[5] || '-';
       teamId = null; 
     } else { 
+      // 학생 포맷
       userKey = parts[0]; loginId = parts[0]; rawPassword = parts[parts.length - 1];
       name = parts.slice(1, -1).join(' '); role = '학생'; subject = '-';
       teamId = null; 
@@ -170,24 +199,22 @@ const handleBulkCreate = async () => {
       successCount++;
     } catch (error) {
       if (error.code === 'auth/email-already-in-use') {
-        // 이미 있으면 Firestore 정보만 업데이트
-        await adminStore.saveUser(userData);
+        await adminStore.saveUser(userData); // 이미 있으면 덮어쓰기 업데이트
         successCount++;
       } else {
         console.error(error);
       }
     }
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 100)); // Firebase 요청 제한 방지 딜레이
   }
 
   isProcessing.value = false;
-  statusMessage.value = `완료! (저장/업데이트: ${successCount}건, 제외: ${skippedCount}건)`;
+  statusMessage.value = `완료! (저장: ${successCount}건, 제외: ${skippedCount}건)`;
   excelData.value = '';
 };
 
-// --- 2. 개별 및 선택 삭제 ---
 const deleteUser = async (key) => {
-  if (confirm(`${key} 사용자를 시스템에서 영구 삭제하시겠습니까?`)) {
+  if (confirm(`[${key}] 사용자를 영구 삭제하시겠습니까?`)) {
     try {
       await adminStore.removeUser(key);
       selectedKeys.value = selectedKeys.value.filter(k => k !== key);
@@ -203,18 +230,55 @@ const deleteSelected = async () => {
   selectedKeys.value = [];
 };
 
-// --- 3. 정보 수정 ---
 const openEditModal = (user) => {
   currentUserToEdit.value = user;
   isEditModalOpen.value = true;
 };
 
-const saveEdit = async (updatedData) => {
+const saveUserEdit = async (updatedData) => {
   try {
     await adminStore.saveUser(updatedData);
     isEditModalOpen.value = false;
   } catch (e) { 
-    alert('수정 실패'); 
+    alert('사용자 수정 실패'); 
+  }
+};
+
+// ==========================================
+// 2. 팀 관리 로직
+// ==========================================
+const selectedTeamKeys = ref([]);
+const isEditTeamModalOpen = ref(false);
+const currentTeamToEdit = ref(null);
+
+const deleteTeam = async (teamId) => {
+  if (confirm(`[${teamId}] 팀을 완전히 삭제하시겠습니까?`)) {
+    try {
+      await adminStore.removeTeam(teamId);
+      selectedTeamKeys.value = selectedTeamKeys.value.filter(k => k !== teamId);
+    } catch (e) { alert('팀 삭제 실패'); }
+  }
+};
+
+const deleteSelectedTeams = async () => {
+  if (!confirm(`선택한 ${selectedTeamKeys.value.length}개 팀을 삭제하시겠습니까?`)) return;
+  for (const teamId of selectedTeamKeys.value) {
+    await adminStore.removeTeam(teamId);
+  }
+  selectedTeamKeys.value = [];
+};
+
+const openEditTeamModal = (team) => {
+  currentTeamToEdit.value = team;
+  isEditTeamModalOpen.value = true;
+};
+
+const saveTeamEdit = async (updatedData) => {
+  try {
+    await adminStore.saveTeam(updatedData);
+    isEditTeamModalOpen.value = false;
+  } catch (e) { 
+    alert('팀 수정 실패'); 
   }
 };
 </script>

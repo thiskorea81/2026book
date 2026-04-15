@@ -3,6 +3,8 @@ import { db } from '@/firebase';
 import { 
   collection, 
   addDoc, 
+  setDoc,
+  updateDoc,
   query, 
   where, 
   orderBy, 
@@ -23,7 +25,7 @@ export const useStudentStore = defineStore('student', {
     mySummary: {
       team: null,
       teacher: null,
-      isDefaultTeacher: false, // 💡 기본 배정 교사 여부 확인용
+      isDefaultTeacher: false,
       logsCount: 0,
       hasEval: false
     },
@@ -33,14 +35,13 @@ export const useStudentStore = defineStore('student', {
   }),
 
   actions: {
-    // 💡 내 활동 및 교사 정보 가져오기 (배정 로직 포함)
+    // 1. 내 활동 요약 정보 가져오기
     async fetchMySummary() {
       if (!this.currentUser.userKey) return;
       this.isLoading = true;
       try {
         let assignedTeacherId = null;
 
-        // A. 팀 정보 확인
         if (this.currentUser.teamId) {
           const teamDoc = await getDoc(doc(db, "teams", this.currentUser.teamId));
           if (teamDoc.exists()) {
@@ -49,24 +50,19 @@ export const useStudentStore = defineStore('student', {
           }
         }
 
-        // B. 💡 교사 배정 로직 (미배정 시 기본값 설정)
         if (!assignedTeacherId) {
           this.mySummary.isDefaultTeacher = true;
-          // 학번 5자리(예: 10501)에서 2~3번째 자리(05) 추출
           const classNum = parseInt(this.currentUser.userKey.substring(1, 3));
           
           if (classNum >= 1 && classNum <= 9) {
-            // 1~9반: T01 ~ T09 (담임)
             assignedTeacherId = `T0${classNum}`;
           } else {
-            // 그 외: T00 (학년부장)
             assignedTeacherId = 'T00';
           }
         } else {
           this.mySummary.isDefaultTeacher = false;
         }
 
-        // C. 교사 상세 정보 가져오기
         if (assignedTeacherId) {
           const teacherDoc = await getDoc(doc(db, "users", assignedTeacherId));
           if (teacherDoc.exists()) {
@@ -74,7 +70,6 @@ export const useStudentStore = defineStore('student', {
           }
         }
 
-        // D. 기타 현황 (기존 동일)
         const logQ = query(collection(db, "readingLogs"), where("studentId", "==", this.currentUser.userKey));
         const logSnap = await getDocs(logQ);
         this.mySummary.logsCount = logSnap.size;
@@ -90,6 +85,7 @@ export const useStudentStore = defineStore('student', {
       }
     },
 
+    // 2. 네이버 도서 검색 API
     async searchBookByISBN(isbn) {
       if (!isbn) return null;
       const clientId = import.meta.env.VITE_NAVER_CLIENT_ID;
@@ -113,6 +109,7 @@ export const useStudentStore = defineStore('student', {
       } catch (error) { return null; }
     },
 
+    // 3. 💡 폼 제출 및 팀 번호 자동 배정 로직
     async submitForm(formType, formData) {
       this.isLoading = true;
       try {
@@ -121,18 +118,68 @@ export const useStudentStore = defineStore('student', {
           studentName: this.currentUser.name,
           createdAt: serverTimestamp(),
         };
-        let collectionName = '';
-        if (formType === '프로그램신청') collectionName = 'teams';
-        else if (formType === '도서신청') collectionName = 'bookApplications';
-        else if (formType === '독서일지') collectionName = 'readingLogs';
-        else if (formType === '자기평가서') collectionName = 'selfEvaluations';
 
-        await addDoc(collection(db, collectionName), { ...commonData, ...formData });
-        alert(`${formType} 제출 완료!`);
+        if (formType === '프로그램신청') {
+          // --- 팀 번호 자동 생성 (예: 2026-96) ---
+          const year = new Date().getFullYear();
+          const teamsSnap = await getDocs(collection(db, "teams"));
+          
+          let maxNum = 0;
+          teamsSnap.forEach(docSnap => {
+            const id = docSnap.id;
+            if (id.startsWith(`${year}-`)) {
+              const num = parseInt(id.split('-')[1]);
+              if (!isNaN(num) && num > maxNum) {
+                maxNum = num;
+              }
+            }
+          });
+          
+          const newTeamId = `${year}-${maxNum + 1}`;
+
+          // 지정된 팀 번호를 문서 ID로 사용하여 teams 컬렉션에 저장
+          await setDoc(doc(db, "teams", newTeamId), {
+            ...commonData,
+            ...formData,
+            teamId: newTeamId,
+            status: 'pending' // 승인 대기 상태
+          });
+
+          // 신청한 학생 본인의 정보에 팀 번호 연동
+          await updateDoc(doc(db, "users", this.currentUser.userKey), {
+            teamId: newTeamId
+          });
+          this.currentUser.teamId = newTeamId; // 로컬 상태 즉시 업데이트
+
+          await this.fetchMySummary(); // 내 정보 즉시 갱신
+          alert(`프로그램 신청이 완료되었습니다! (부여된 팀 번호: ${newTeamId})`);
+
+        } else {
+          // --- 다른 양식 (독서일지, 평가서 등) 저장 ---
+          let collectionName = '';
+          if (formType === '도서신청') collectionName = 'bookApplications';
+          else if (formType === '독서일지') collectionName = 'readingLogs';
+          else if (formType === '자기평가서') collectionName = 'selfEvaluations';
+
+          await addDoc(collection(db, collectionName), { ...commonData, ...formData });
+          
+          if (formType === '독서일지') await this.fetchMyLogs();
+          if (formType === '자기평가서') await this.fetchMySummary();
+          
+          alert(`${formType} 제출이 완료되었습니다!`);
+        }
+        
         return true;
-      } catch (error) { return false; } finally { this.isLoading = false; }
+      } catch (error) {
+        console.error("제출 실패:", error);
+        alert("데이터 저장 중 오류가 발생했습니다. 다시 시도해 주세요.");
+        return false;
+      } finally {
+        this.isLoading = false;
+      }
     },
 
+    // 4. 내 독서일지 목록 로드
     async fetchMyLogs() {
       if (!this.currentUser.userKey) return;
       this.isLoading = true;
