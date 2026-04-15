@@ -14,18 +14,20 @@
             <input type="text" :value="userForm.loginId" disabled class="w-full p-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-500 text-sm">
           </div>
         </div>
+
         <div>
           <label class="block text-sm text-gray-600 mb-1">이름</label>
           <input type="text" v-model="userForm.name" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
         </div>
-        <div class="flex gap-4">
+
+        <div v-if="userForm.role !== '학생'" class="flex gap-4 p-4 bg-blue-50 rounded-lg mt-2">
           <div class="w-1/2">
-            <label class="block text-sm text-gray-600 mb-1">역할 (업무)</label>
-            <input type="text" v-model="userForm.role" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+            <label class="block text-sm text-blue-800 font-medium mb-1">역할 (업무)</label>
+            <input type="text" v-model="userForm.role" class="w-full p-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
           </div>
           <div class="w-1/2">
-            <label class="block text-sm text-gray-600 mb-1">담당 교과</label>
-            <input type="text" v-model="userForm.subject" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+            <label class="block text-sm text-blue-800 font-medium mb-1">담당 교과</label>
+            <input type="text" v-model="userForm.subject" class="w-full p-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
           </div>
         </div>
       </div>
