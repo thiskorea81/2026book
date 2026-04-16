@@ -10,31 +10,42 @@ export const useUserStore = defineStore('user', {
     isLoading: false
   }),
 
+  // 💡 실시간 상태 계산 로직 추가
+  getters: {
+    activityStatus: (state) => {
+      // 1. 팀 신청을 안 했을 때
+      if (!state.mySummary.team) {
+        return { text: '🌱 시작 전', color: 'text-gray-400' };
+      }
+      // 2. 일지 3건 이상 + 평가서까지 냈을 때
+      if (state.mySummary.logsCount >= 3 && state.mySummary.hasEval) {
+        return { text: '✅ 활동 완료', color: 'text-blue-600' };
+      }
+      // 3. 활동 중일 때 (팀은 있지만 조건 미충족)
+      return { text: '📖 진행 중', color: 'text-orange-500' };
+    }
+  },
+
   actions: {
-    // 💡 학생의 기본 상태와 교사 정보를 가져오는 로직
     async fetchMySummary() {
       if (!this.currentUser.userKey) return;
       this.isLoading = true;
       try {
-        // 1. 메뉴 노출 설정 로드
         const menuSnap = await getDoc(doc(db, "settings", "menuStatus"));
         if (menuSnap.exists()) this.menuSettings = { ...this.menuSettings, ...menuSnap.data() };
 
         let teacherId = null;
         let myTeam = null;
 
-        // 2. 팀 매칭 (members 배열에 내 학번이 있는지 확인)
         const teamQ = query(collection(db, "teams"), where("members", "array-contains", this.currentUser.userKey));
         const teamSnap = await getDocs(teamQ);
         
         if (!teamSnap.empty) {
           myTeam = teamSnap.docs[0].data();
           this.currentUser.teamId = myTeam.teamId;
-          // 엑셀에서 지정한 담당교사번호가 있다면 우선 사용
           if (myTeam.teacherId !== undefined) teacherId = String(myTeam.teacherId);
         }
 
-        // 3. 교사 매칭 (0~9 숫자 ID 방식)
         if (!teacherId) {
           const classNum = parseInt(this.currentUser.userKey.substring(1, 3)) || 0;
           teacherId = (classNum >= 1 && classNum <= 9) ? String(classNum) : "0";
@@ -53,7 +64,6 @@ export const useUserStore = defineStore('user', {
         }
         this.mySummary.team = myTeam;
 
-        // 4. 제출 현황 업데이트
         const logSnap = await getDocs(query(collection(db, "readingLogs"), where("studentId", "==", this.currentUser.userKey)));
         this.mySummary.logsCount = logSnap.size;
         
