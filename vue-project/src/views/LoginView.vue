@@ -1,7 +1,6 @@
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50 px-4 font-sans">
     <div class="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 border-t-4 border-blue-600">
-      
       <div class="text-center mb-8">
         <h1 class="text-3xl font-extrabold text-gray-800 mb-2">상당고 특색프로그램</h1>
         <p class="text-gray-500 text-sm">아이디만 입력하여 로그인하세요</p>
@@ -16,7 +15,7 @@
               type="text" 
               id="userId"
               placeholder="학번 또는 교사 아이디" 
-              class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 focus:bg-white"
+              class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-gray-50 focus:bg-white"
               required
             />
             <span class="absolute right-4 text-gray-400 text-sm pointer-events-none font-medium">@sangdang.hs.kr</span>
@@ -30,7 +29,7 @@
             type="password" 
             id="password"
             placeholder="비밀번호 입력" 
-            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 focus:bg-white"
+            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-gray-50 focus:bg-white"
             required
           />
         </div>
@@ -44,9 +43,7 @@
           :disabled="isLoading"
           class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-colors duration-200 shadow-md disabled:bg-blue-300 flex justify-center items-center"
         >
-          <span v-if="isLoading" class="flex items-center">
-            로그인 처리 중...
-          </span>
+          <span v-if="isLoading">로그인 처리 중...</span>
           <span v-else>로그인</span>
         </button>
       </form>
@@ -58,9 +55,12 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/firebase';
+import { auth, db } from '@/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { useUserStore } from '@/stores/userStore';
 
 const router = useRouter();
+const userStore = useUserStore();
 const userId = ref('');
 const password = ref('');
 const errorMessage = ref('');
@@ -70,46 +70,56 @@ const handleLogin = async () => {
   errorMessage.value = '';
   isLoading.value = true;
 
-  const pureId = userId.value.split('@')[0]; 
-  const fullEmail = userId.value.includes('@') ? userId.value : `${userId.value}@sangdang.hs.kr`;
+  const inputId = userId.value.trim();
+  const pureId = inputId.split('@')[0].toUpperCase(); 
+  const fullEmail = inputId.includes('@') ? inputId : `${inputId}@sangdang.hs.kr`;
 
   try {
     await signInWithEmailAndPassword(auth, fullEmail, password.value);
     
-    // 💡 강제 비밀번호 변경 대상에서 교사(끝이 $인 비밀번호)를 제외했습니다.
-    // 학생(s1234!)과 관리자(admin1234)만 강제로 비밀번호 변경 페이지로 이동합니다.
-    const isInitialPassword = 
-      password.value === 's1234!' || 
-      password.value === 'admin1234';
-
-    if (isInitialPassword) {
+    // 초기 비밀번호 변경 체크
+    if (password.value === 's1234!' || password.value === 'admin1234') {
       router.push('/change-password');
       return; 
     }
 
-    // 역할에 맞게 페이지 이동
-    if (pureId === 'admin') {
+    // 💡 Firestore에서 사용자 데이터 로드
+    const q = query(collection(db, "users"), where("email", "==", fullEmail));
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      errorMessage.value = 'DB에 사용자 정보가 없습니다.';
+      isLoading.value = false;
+      return;
+    }
+
+    const userData = querySnapshot.docs[0].data();
+    const roleFromDB = userData.role ? userData.role.trim() : "";
+
+    // 💡 핵심: 페이지 이동 전에 스토어에 유저 정보 먼저 저장
+    userStore.currentUser = userData; 
+
+    // 최종 분기 판정
+    const teacherRoles = ['교사', '담임', '학년부장', '교감', '교장', '부장교사'];
+
+    if (pureId === 'ADMIN' || roleFromDB === '관리자') {
       router.push('/admin');
-    } else if (pureId.toLowerCase().startsWith('t')) {
+    } 
+    else if (
+      pureId.startsWith('T') || 
+      teacherRoles.includes(roleFromDB) ||
+      roleFromDB.includes('교사') || 
+      roleFromDB.includes('담임')
+    ) {
       router.push('/teacher');
-    } else {
+    } 
+    else {
       router.push('/student');
     }
 
   } catch (error) {
-    console.error("로그인 에러:", error);
-    switch (error.code) {
-      case 'auth/user-not-found':
-      case 'auth/wrong-password':
-      case 'auth/invalid-credential':
-        errorMessage.value = '아이디 또는 비밀번호가 일치하지 않습니다.';
-        break;
-      case 'auth/too-many-requests':
-        errorMessage.value = '접근이 일시적으로 제한되었습니다. 잠시 후 시도해주세요.';
-        break;
-      default:
-        errorMessage.value = '로그인 중 서버 오류가 발생했습니다.';
-    }
+    console.error("Login Error:", error);
+    errorMessage.value = '아이디 또는 비밀번호가 일치하지 않습니다.';
   } finally {
     isLoading.value = false;
   }
