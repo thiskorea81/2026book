@@ -2,35 +2,34 @@
   <div class="flex flex-col md:flex-row gap-6 h-[calc(100vh-250px)]">
     <div class="w-full md:w-80 bg-white border rounded-3xl flex flex-col overflow-hidden shadow-sm">
       <div class="flex border-b bg-gray-50 p-1">
-        <button v-for="tab in subTabs" :key="tab.id" 
-          @click="currentSubTab = tab.id"
-          class="flex-1 py-2 text-[11px] font-bold rounded-lg transition-all"
-          :class="currentSubTab === tab.id ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'"
-        >
+        <button v-for="tab in subTabs" :key="tab.id" @click="currentSubTab = tab.id"
+          class="flex-1 py-2 text-[10px] sm:text-[11px] font-black rounded-lg transition-all"
+          :class="currentSubTab === tab.id ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'">
           {{ tab.label }}
         </button>
       </div>
 
       <div class="p-3 border-b">
-        <input v-model="searchQuery" type="text" placeholder="이름으로 찾기..." 
-          class="w-full p-2 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
+        <input v-model="searchQuery" type="text" placeholder="이름으로 학생 찾기..." 
+          class="w-full p-2 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 transition-all">
       </div>
 
       <div class="flex-1 overflow-y-auto no-scrollbar">
         <div v-if="filteredList.length === 0" class="p-10 text-center text-xs text-gray-300">
-          대상 학생이 없습니다.
+          해당 조건의 학생이 없습니다.
         </div>
-        <div v-for="s in filteredList" :key="s.userKey" 
-          @click="selectStudent(s)"
+        <div v-for="s in filteredList" :key="s.userKey" @click="selectStudent(s)"
           class="p-4 border-b cursor-pointer transition-all hover:bg-blue-50/50"
-          :class="selectedStudent?.userKey === s.userKey ? 'bg-blue-50 border-r-4 border-r-blue-600' : ''"
-        >
+          :class="selectedStudent?.userKey === s.userKey ? 'bg-blue-50 border-r-4 border-r-blue-600' : ''">
           <div class="flex justify-between items-center">
-            <div>
+            <div class="flex flex-col">
               <span class="text-sm font-black text-gray-800">{{ s.name }}</span>
-              <span class="text-[10px] text-gray-400 ml-2 font-mono">{{ s.userKey }}</span>
+              <span class="text-[10px] text-gray-400 font-mono">{{ s.userKey }}</span>
             </div>
-            <span v-if="s.isMentor" class="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-black uppercase">Mentee</span>
+            <div class="flex flex-col items-end space-y-1">
+              <span v-if="s.isMentor" class="text-[8px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-black uppercase">Mentee</span>
+              <span v-if="!s.isHomeroom" class="text-[8px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">타반 학생</span>
+            </div>
           </div>
         </div>
       </div>
@@ -42,10 +41,10 @@
           <div>
             <div class="flex items-center space-x-2">
               <h3 class="text-xl font-black text-gray-900">{{ selectedStudent.name }}</h3>
-              <span class="text-xs text-gray-400">({{ selectedStudent.userKey }})</span>
+              <span class="text-xs text-gray-400 font-mono">({{ selectedStudent.userKey }})</span>
             </div>
             <p class="text-[11px] font-bold mt-1" :class="selectedStudent.isMentor ? 'text-blue-600' : 'text-orange-500'">
-              {{ selectedStudent.isMentor ? '✍️ 생기부 초안을 작성하고 저장할 수 있습니다.' : '👁️ 우리 반 학생의 기록을 열람 중입니다. (읽기 전용)' }}
+              {{ selectedStudent.isMentor ? '✍️ 지도 학생입니다. 자율활동 초안을 작성할 수 있습니다.' : '👁️ 우리 반 학생입니다. (다른 선생님 지도 중, 읽기 전용)' }}
             </p>
           </div>
           <button v-if="selectedStudent.isMentor" @click="saveRecord" 
@@ -54,7 +53,7 @@
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-6 space-y-8">
+        <div class="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
           <TeacherAiAssistant 
             v-if="selectedStudent.isMentor"
             :student="selectedStudent" 
@@ -62,9 +61,12 @@
             @apply-draft="applyAiDraft"
           />
 
-          <div class="space-y-3">
+          <div class="space-y-4">
             <div class="flex justify-between items-end px-1">
-              <label class="text-sm font-black text-gray-700">자율활동 특기사항 초안</label>
+              <div class="flex items-center space-x-2">
+                <span class="w-1.5 h-4 bg-blue-600 rounded-full"></span>
+                <label class="text-sm font-black text-gray-700">자율활동 특기사항 초안</label>
+              </div>
               <span class="text-[10px] font-mono" :class="getByteCount(recordData.autonomous) > 1500 ? 'text-red-500' : 'text-gray-400'">
                 {{ getByteCount(recordData.autonomous) }} / 1500 Bytes
               </span>
@@ -72,16 +74,16 @@
             <textarea 
               v-model="recordData.autonomous" 
               :disabled="!selectedStudent.isMentor"
-              :placeholder="selectedStudent.isMentor ? '학생의 성장이 드러나는 문장을 입력하세요...' : '작성된 기록이 없습니다.'"
-              class="w-full p-6 border-2 rounded-2xl text-sm leading-relaxed outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[300px] shadow-inner disabled:bg-gray-50 disabled:text-gray-500"
+              class="w-full p-6 border-2 rounded-2xl text-sm leading-relaxed outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[400px] shadow-inner disabled:bg-gray-50 disabled:text-gray-500 resize-none"
+              placeholder="자율활동 기록을 입력하세요."
             ></textarea>
           </div>
         </div>
       </div>
       
       <div v-else class="flex-1 flex flex-col items-center justify-center text-gray-300 space-y-4">
-        <span class="text-6-xl">📒</span>
-        <p class="font-bold">왼쪽 리스트에서 학생을 선택하면 생기부 작성이 시작됩니다.</p>
+        <div class="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center text-4xl">📒</div>
+        <p class="font-bold text-sm">학생을 선택하여 생기부 작성을 시작하세요.</p>
       </div>
     </div>
   </div>
@@ -99,7 +101,7 @@ import TeacherAiAssistant from './TeacherAiAssistant.vue';
 const userStore = useUserStore();
 const teacherStore = useTeacherStore();
 
-const currentSubTab = ref('mentee'); // 기본: 지도 학생
+const currentSubTab = ref('mentee');
 const subTabs = [
   { id: 'mentee', label: '지도 학생' },
   { id: 'homeroom-active', label: '우리반(참여)' },
@@ -109,81 +111,113 @@ const subTabs = [
 const searchQuery = ref('');
 const selectedStudent = ref(null);
 const recordData = reactive({ autonomous: '' });
+const resolvedNames = reactive({}); 
 
-// 💡 1. 전체 학생 데이터 맵 구성 (타반 학생 이름 보장을 위해)
+/**
+ * 💡 1. 통합 학생 데이터 맵 구성
+ */
 const studentMap = computed(() => {
   const map = new Map();
-  // 우리 반 아이들 먼저 기본 데이터로 사용
-  teacherStore.homeroomStudents.forEach(s => map.set(s.userKey, { ...s, isMentor: false }));
   
-  // 지도 팀 학생들 병합 (이름이 없을 경우를 대비해 studentLogs나 studentEvals에서 이름을 찾아옴)
+  const myHomeroomIds = new Set(teacherStore.homeroomStudents.map(s => s.userKey));
+  const myMenteeIds = new Set(teacherStore.managedTeams.flatMap(t => t.members));
+  // 독서일지나 자기평가서 기록이 있는 학생들을 '참여'로 판단
+  const participatingIds = new Set([...teacherStore.studentLogs, ...teacherStore.studentEvals].map(r => r.studentId));
+
+  // A. 우리 반 학생들 우선 등록
+  teacherStore.homeroomStudents.forEach(s => {
+    map.set(s.userKey, { 
+      ...s, 
+      isHomeroom: true, 
+      isMentor: myMenteeIds.has(s.userKey),
+      isParticipating: participatingIds.has(s.userKey) 
+    });
+  });
+  
+  // B. 타 반 학생인데 내 멘티인 학생들 병합
   teacherStore.managedTeams.forEach(team => {
     team.members.forEach(mId => {
       if (!map.has(mId)) {
-        // 우리 반이 아닌 경우, 기록 데이터에서 이름을 찾음 (타반학생 이름 노출용)
         const record = [...teacherStore.studentLogs, ...teacherStore.studentEvals].find(r => r.studentId === mId);
+        let finalName = record ? record.studentName : (resolvedNames[mId] || `[조회중...] ${mId}`);
+        
+        if (!record && !resolvedNames[mId]) fetchStudentName(mId);
+
         map.set(mId, { 
           userKey: mId, 
-          name: record ? record.studentName : `[미확인] ${mId}`, 
-          isMentor: true 
+          name: finalName, 
+          isHomeroom: false, 
+          isMentor: true,
+          isParticipating: true 
         });
-      } else {
-        // 우리 반 아이인데 내 멘티이기도 한 경우 권한 승급
-        const student = map.get(mId);
-        student.isMentor = true;
       }
     });
   });
+
   return map;
 });
 
-// 💡 2. 탭별 필터링 리스트
+/**
+ * 💡 2. 탭별 필터링 로직 (요청하신 기준 적용)
+ */
 const filteredList = computed(() => {
   const all = Array.from(studentMap.value.values());
   const query = searchQuery.value.trim();
 
-  // 참여 여부 판단 (기록이 1개라도 있는지)
-  const activeIds = new Set([...teacherStore.studentLogs, ...teacherStore.studentEvals].map(r => r.studentId));
-
   let baseList = [];
   if (currentSubTab.value === 'mentee') {
+    // 탭 1: 지도 학생 (내 멘티라면 반 상관없이 모두 포함)
     baseList = all.filter(s => s.isMentor);
   } else if (currentSubTab.value === 'homeroom-active') {
-    baseList = all.filter(s => !s.isMentor && activeIds.has(s.userKey));
-  } else {
-    baseList = all.filter(s => !s.isMentor && !activeIds.has(s.userKey));
+    // 탭 2: 우리반(참여) - 우리 반 아이 중 내 멘티는 아니지만, 다른 선생님께 지도를 받아 활동 기록이 있는 아이
+    baseList = all.filter(s => s.isHomeroom && !s.isMentor && s.isParticipating);
+  } else if (currentSubTab.value === 'homeroom-inactive') {
+    // 탭 3: 우리반(미참여) - 우리 반 아이 중 내 멘티도 아니고, 활동 기록도 전혀 없는 아이
+    baseList = all.filter(s => s.isHomeroom && !s.isMentor && !s.isParticipating);
   }
 
-  return baseList.filter(s => s.name.includes(query)).sort((a, b) => a.userKey.localeCompare(b.userKey));
+  return baseList
+    .filter(s => s.name.includes(query))
+    .sort((a, b) => a.userKey.localeCompare(b.userKey));
 });
+
+// 타 반 학생 이름 비동기 조회
+const fetchStudentName = async (studentId) => {
+  try {
+    const userDoc = await getDoc(doc(db, "users", studentId));
+    if (userDoc.exists()) resolvedNames[studentId] = userDoc.data().name;
+    else resolvedNames[studentId] = `[미확인] ${studentId}`;
+  } catch (e) { resolvedNames[studentId] = `[오류] ${studentId}`; }
+};
 
 const selectStudent = async (student) => {
   selectedStudent.value = student;
   const docSnap = await getDoc(doc(db, "studentRecords", student.userKey));
-  if (docSnap.exists()) {
-    recordData.autonomous = docSnap.data().autonomous || '';
-  } else {
-    recordData.autonomous = '';
-  }
+  recordData.autonomous = docSnap.exists() ? docSnap.data().autonomous || '' : '';
 };
 
 const saveRecord = async () => {
-  if (!selectedStudent.value || !selectedStudent.value.isMentor) return;
+  if (!selectedStudent.value?.isMentor) return;
   try {
     await setDoc(doc(db, "studentRecords", selectedStudent.value.userKey), {
       autonomous: recordData.autonomous,
       updatedAt: serverTimestamp(),
       teacherId: userStore.currentUser.userKey
     });
-    alert(`${selectedStudent.value.name} 학생의 기록이 저장되었습니다.`);
-  } catch (e) { alert('저장 중 오류가 발생했습니다.'); }
+    alert(`${selectedStudent.value.name} 학생의 기록을 저장했습니다.`);
+  } catch (e) { alert('저장 중 오류 발생'); }
 };
 
 const applyAiDraft = (draft) => {
-  if (confirm('AI가 작성한 초안으로 현재 내용을 교체할까요?')) {
-    recordData.autonomous = draft.autonomous;
-  }
+  if (confirm('AI 초안으로 내용을 교체할까요?')) recordData.autonomous = draft.autonomous;
 };
 
 const getByteCount = (text) => getNeisByteLength(text);
 </script>
+
+<style scoped>
+.animate-fade-in { animation: fadeIn 0.4s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
