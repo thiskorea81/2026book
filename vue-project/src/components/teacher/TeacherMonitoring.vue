@@ -1,74 +1,77 @@
 <template>
   <div class="space-y-6">
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gray-50 p-4 rounded-xl border">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gray-50 p-4 rounded-xl border shadow-sm no-print">
       <div class="flex flex-wrap gap-2">
-        <div class="flex bg-white border rounded-lg p-1 shadow-sm mr-2">
-          <button @click="subTab = 'logs'" class="px-4 py-1.5 text-xs font-bold rounded-md transition-all" :class="subTab === 'logs' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500'">📖 독서일지</button>
-          <button @click="subTab = 'evals'" class="px-4 py-1.5 text-xs font-bold rounded-md transition-all" :class="subTab === 'evals' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500'">✅ 자기평가서</button>
-        </div>
         <select v-model="groupFilter" class="text-xs font-bold border rounded-lg px-3 py-1.5 bg-white outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="all">전체 학생 보기</option>
-          <option value="homeroom">우리 반 아이들만</option>
-          <option value="mentor">내가 지도하는 학생만</option>
+          <option value="mentor">🙋‍♂️ 내가 지도하는 학생</option>
+          <option value="homeroom">🏠 우리 반 학생 전체</option>
+          <option value="all">전체 보기</option>
         </select>
+        <div class="flex bg-white border rounded-lg p-1">
+          <button @click="subTab = 'logs'" class="px-3 py-1 text-[11px] font-bold rounded" :class="subTab === 'logs' ? 'bg-blue-600 text-white' : 'text-gray-500'">독서일지</button>
+          <button @click="subTab = 'evals'" class="px-3 py-1 text-[11px] font-bold rounded" :class="subTab === 'evals' ? 'bg-blue-600 text-white' : 'text-gray-500'">자기평가서</button>
+        </div>
       </div>
-
-      <div class="relative w-full md:w-64">
-        <input v-model="searchQuery" type="text" placeholder="이름 또는 학번 검색..." class="w-full pl-9 pr-4 py-2 text-sm border rounded-lg outline-none shadow-sm">
-        <svg class="w-4 h-4 absolute left-3 top-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-      </div>
+      <input v-model="searchQuery" type="text" placeholder="이름 검색..." class="w-full md:w-48 p-2 text-xs border rounded-lg outline-none">
     </div>
 
-    <div class="space-y-4">
-      <div v-if="filteredData.length === 0" class="text-center py-20 text-gray-400 text-sm">표시할 데이터가 없습니다.</div>
-      
-      <div v-else v-for="item in filteredData" :key="item.id" 
-        class="border rounded-2xl overflow-hidden bg-white shadow-sm transition-all hover:border-blue-200"
+    <div class="space-y-3 no-print">
+      <div v-for="item in filteredData" :key="item.id" 
+        class="border rounded-2xl bg-white transition-all overflow-hidden"
+        :class="isMentor(item.studentId) ? 'border-blue-100 shadow-sm' : 'border-gray-100'"
       >
-        <div @click="toggleDetail(item.id)" class="p-5 cursor-pointer flex justify-between items-center hover:bg-gray-50">
-          <div>
+        <div class="p-4 flex justify-between items-center hover:bg-gray-50 transition-colors">
+          <div @click="toggleDetail(item.id)" class="flex-1 cursor-pointer">
             <div class="flex items-center space-x-2 mb-1">
-              <span class="text-[10px] font-bold px-2 py-0.5 rounded" :class="isHomeroom(item.studentId) ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'">
-                {{ isHomeroom(item.studentId) ? '우리 반' : '지도 학생' }}
-              </span>
-              <span class="text-xs text-gray-400">{{ item.date || formatDate(item.createdAt) }}</span>
+              <span v-if="isMentor(item.studentId)" class="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold uppercase">Mentor</span>
+              <span v-else class="bg-gray-200 text-gray-600 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase">Read Only</span>
+              <span class="text-[10px] text-gray-400">{{ subTab === 'logs' ? item.date : '제출 완료' }}</span>
             </div>
-            <h4 class="font-bold text-gray-800">{{ item.studentName }} ({{ item.studentId }})</h4>
-            <p class="text-xs text-blue-600 mt-1">{{ item.title || item.bookTitle }}</p>
+            <h4 class="font-bold text-gray-800 text-sm">{{ item.studentName }} ({{ item.studentId }})</h4>
+            <p class="text-[11px] text-blue-500 truncate mt-1">
+              {{ subTab === 'logs' ? '📖 ' + item.title : '📝 ' + item.bookTitle }}
+            </p>
           </div>
-          <svg :class="{'rotate-180': expandedId === item.id}" class="w-5 h-5 text-gray-300 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" /></svg>
+          <button @click="openFullView(item)" class="ml-4 px-3 py-1.5 bg-gray-800 text-white rounded-lg text-[10px] font-bold hover:bg-black transition-all">
+            🔍 크게 보기 / 인쇄
+          </button>
         </div>
 
-        <div v-if="expandedId === item.id" class="px-6 pb-6 pt-2 bg-gray-50/50 border-t animate-fade-in">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-            <div class="space-y-4">
-              <div v-if="subTab === 'logs'" class="space-y-3">
-                <p class="text-xs"><b class="text-blue-600">[중심내용]</b><br/>{{ item.summary }}</p>
-                <p class="text-xs"><b class="text-blue-600">[소감/깨달은점]</b><br/>{{ item.impression }} / {{ item.realization }}</p>
-              </div>
-              <div v-else class="space-y-3">
-                <p class="text-xs"><b class="text-purple-600">[주제]</b><br/>{{ item.careerTopic }}</p>
-                <p class="text-xs"><b class="text-purple-600">[소감 및 계획]</b><br/>{{ item.reviewAndPlan }}</p>
-              </div>
+        <div v-if="expandedId === item.id" class="px-5 pb-5 pt-4 bg-gray-50/50 border-t border-dashed animate-fade-in">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-5 rounded-xl border text-[11px] space-y-4">
+              <template v-if="subTab === 'logs'">
+                <div><b class="text-blue-700 block mb-1">중심 내용</b><p>{{ item.summary }}</p></div>
+                <div><b class="text-blue-700 block mb-1">인상 깊은 부분</b><p>{{ item.impression }}</p></div>
+                <div><b class="text-blue-700 block mb-1">깨달은 점</b><p>{{ item.realization }}</p></div>
+                <div><b class="text-blue-700 block mb-1">독서 방법</b><p>{{ item.method }}</p></div>
+              </template>
+              <template v-else>
+                <div class="grid grid-cols-2 gap-2 mb-2 bg-blue-50 p-2 rounded">
+                  <p><b>학번:</b> {{ item.studentId }}</p><p><b>이름:</b> {{ item.studentName }}</p>
+                  <p class="col-span-2"><b>책 제목:</b> {{ item.bookTitle }}</p>
+                </div>
+                <div><b class="text-purple-700 block mb-1">탐구 주제</b><p class="font-bold">{{ item.careerTopic }}</p></div>
+                <div><b class="text-purple-700 block mb-1">소감 및 계획</b><p class="whitespace-pre-wrap">{{ item.reviewAndPlan }}</p></div>
+              </template>
             </div>
-
-            <div class="bg-white p-4 rounded-xl border border-blue-100 shadow-sm">
-              <label class="block text-[11px] font-bold text-blue-600 mb-2">🖋️ 생기부용 교사 코멘트 (학생에겐 보이지 않음)</label>
-              <textarea v-model="tempComments[item.id]" rows="4" 
-                placeholder="관찰한 내용이나 생기부 기록 시 참고할 사항을 메모하세요..."
-                class="w-full text-xs p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea>
-              <div class="flex justify-between items-center mt-2">
-                <span class="text-[10px] text-gray-400">마지막 저장: {{ formatDate(item.commentedAt) || '없음' }}</span>
-                <button @click="saveComment(item.id)" 
-                  class="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-bold rounded-md hover:bg-blue-700 transition-all">
-                  저장하기
-                </button>
-              </div>
+            <div class="bg-white p-4 rounded-xl border border-blue-100 h-fit">
+              <label class="text-[10px] font-bold text-blue-600 block mb-2">메모/코멘트</label>
+              <textarea v-model="tempComments[item.id]" rows="5" class="w-full text-xs p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+              <button @click="saveComment(item.id)" class="w-full mt-2 py-2 bg-blue-600 text-white text-[10px] font-bold rounded-lg">저장</button>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <TeacherPrintModal 
+      v-if="fullViewItem" 
+      :item="fullViewItem" 
+      :sub-tab="subTab" 
+      :team-members="getTeamMembers(fullViewItem.studentId)"
+      @close="fullViewItem = null"
+    />
   </div>
 </template>
 
@@ -76,63 +79,67 @@
 import { ref, computed, reactive, watch } from 'vue';
 import { useUserStore } from '@/stores/userStore';
 import { useTeacherStore } from '@/stores/teacherStore';
+import TeacherPrintModal from './TeacherPrintModal.vue'; // 💡 컴포넌트 임포트
 
 const userStore = useUserStore();
 const teacherStore = useTeacherStore();
 
 const subTab = ref('logs');
-const groupFilter = ref('all');
+const groupFilter = ref('mentor');
 const searchQuery = ref('');
 const expandedId = ref(null);
+const fullViewItem = ref(null);
 const tempComments = reactive({});
 
-// 💡 데이터 필터링 핵심 로직
+const mentorMemberIds = computed(() => teacherStore.managedTeams.flatMap(t => t.members || []));
+const isMentor = (studentId) => mentorMemberIds.value.includes(studentId);
+
 const filteredData = computed(() => {
   const source = subTab.value === 'logs' ? teacherStore.studentLogs : teacherStore.studentEvals;
-  const classCode = userStore.currentUser.userKey.padStart(2, '0');
+  const teacherKey = userStore.currentUser.userKey || "";
+  const classCode = teacherKey.padStart(2, '0');
 
   return source.filter(item => {
-    // 1. 이름/학번 검색
-    const matchesSearch = item.studentName.includes(searchQuery.value) || item.studentId.includes(searchQuery.value);
-    
-    // 2. 그룹 필터링 (홈룸 vs 멘토)
+    const matchesSearch = (item.studentName || "").includes(searchQuery.value) || (item.studentId || "").includes(searchQuery.value);
     let matchesGroup = true;
     if (groupFilter.value === 'homeroom') {
-      matchesGroup = item.studentId.substring(1, 3) === classCode;
+      matchesGroup = (item.studentId || "").substring(1, 3) === classCode;
     } else if (groupFilter.value === 'mentor') {
-      // 내가 지도하는 팀의 멤버인지 확인
-      const mentorMemberIds = teacherStore.managedTeams.flatMap(t => t.members || []);
-      matchesGroup = mentorMemberIds.includes(item.studentId);
+      matchesGroup = isMentor(item.studentId);
     }
-    
     return matchesSearch && matchesGroup;
   }).sort((a, b) => (b.date || b.createdAt) > (a.date || a.createdAt) ? 1 : -1);
 });
 
-// 코멘트 초기값 세팅
-watch(expandedId, (newId) => {
-  if (newId && !tempComments[newId]) {
-    const data = subTab.value === 'logs' ? teacherStore.studentLogs : teacherStore.studentEvals;
-    const target = data.find(i => i.id === newId);
-    if (target) tempComments[newId] = target.teacherComment || '';
-  }
-});
-
-const isHomeroom = (studentId) => {
-  return studentId.substring(1, 3) === userStore.currentUser.userKey.padStart(2, '0');
+const getTeamMembers = (studentId) => {
+  const team = teacherStore.managedTeams.find(t => t.members && t.members.includes(studentId));
+  return team ? team.members : [studentId];
 };
+
+const openFullView = (item) => {
+  fullViewItem.value = item;
+};
+
+// handlePrint는 이제 자식 컴포넌트 내부에서 처리합니다.
 
 const saveComment = async (id) => {
   const colName = subTab.value === 'logs' ? 'readingLogs' : 'selfEvaluations';
   const success = await teacherStore.saveComment(colName, id, tempComments[id]);
-  if (success) alert('코멘트가 저장되었습니다.');
+  if (success) alert('저장되었습니다.');
 };
 
 const toggleDetail = (id) => expandedId.value = expandedId.value === id ? null : id;
 
-const formatDate = (ts) => {
-  if (!ts) return '';
-  const date = ts.toDate ? ts.toDate() : new Date(ts);
-  return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
-};
+watch(expandedId, (newId) => {
+  if (newId && !tempComments[newId]) {
+    const list = subTab.value === 'logs' ? teacherStore.studentLogs : teacherStore.studentEvals;
+    const target = list.find(i => i.id === newId);
+    if (target) tempComments[newId] = target.teacherComment || '';
+  }
+});
 </script>
+
+<style scoped>
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+</style>

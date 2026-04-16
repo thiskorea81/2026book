@@ -6,13 +6,13 @@ export const useUserStore = defineStore('user', {
   state: () => ({
     currentUser: { userKey: '', name: '', role: '학생', teamId: null },
     mySummary: { team: null, teacher: null, isDefaultTeacher: false, logsCount: 0, hasEval: false },
-    // 💡 Q&A 메뉴 활성화 상태 추가
     menuSettings: { program: true, book: true, log: true, history: true, eval: true, qa: true },
-    isLoading: false
+    isLoading: false,
+    // 💡 새로고침 시 유저 정보 복구가 완료되었는지 판단하는 기준
+    isAuthReady: false 
   }),
 
   getters: {
-    // 💡 활동 상태 계산 로직
     activityStatus: (state) => {
       if (!state.mySummary.team) return { text: '🌱 시작 전', color: 'text-gray-400' };
       if (state.mySummary.logsCount >= 3 && state.mySummary.hasEval) {
@@ -66,7 +66,7 @@ export const useUserStore = defineStore('user', {
         const evalSnap = await getDocs(query(collection(db, "selfEvaluations"), where("studentId", "==", this.currentUser.userKey)));
         this.mySummary.hasEval = !evalSnap.empty;
 
-      } catch (e) { console.error(e); } finally { this.isLoading = false; }
+      } catch (e) { console.error("Summary 로드 실패:", e); } finally { this.isLoading = false; }
     }
   }
 });

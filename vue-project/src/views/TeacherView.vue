@@ -21,14 +21,14 @@
           <p class="text-3xl font-black text-orange-500">{{ newQuestionsCount }}건</p>
         </div>
         <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <p class="text-xs text-gray-400 font-bold uppercase">일지 제출 현황</p>
+          <p class="text-xs text-gray-400 font-bold uppercase">활동 점검 건수</p>
           <p class="text-3xl font-black text-green-600">{{ teacherStore.studentLogs.length }}건</p>
         </div>
       </div>
 
-      <div class="flex bg-white rounded-xl shadow-sm p-1 border border-gray-200">
+      <div class="flex bg-white rounded-xl shadow-sm p-1 border border-gray-200 overflow-x-auto">
         <button v-for="tab in tabs" :key="tab.id" @click="activeTab = tab.id"
-          class="flex-1 py-3 text-sm font-bold rounded-lg transition-all"
+          class="flex-1 min-w-[100px] py-3 text-sm font-bold rounded-lg transition-all whitespace-nowrap"
           :class="activeTab === tab.id ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'">
           {{ tab.label }}
         </button>
@@ -55,10 +55,11 @@
               </div>
             </div>
           </div>
+          <div v-if="teacherStore.managedTeams.length === 0" class="text-center py-10 text-gray-400">담당하는 팀 정보가 없습니다.</div>
         </div>
 
-        <TeacherQA v-else-if="activeTab === 'qa'" />
         <TeacherMonitoring v-else-if="activeTab === 'monitor'" />
+        <TeacherQA v-else-if="activeTab === 'qa'" />
       </div>
     </main>
   </div>
@@ -91,30 +92,30 @@ const newQuestionsCount = computed(() => {
 });
 
 onMounted(async () => {
-  // 💡 수정: 유저 정보가 아직 로드되지 않은 상태라면 잠시 대기
-  if (!userStore.currentUser.userKey) {
-    // 만약 로그인은 했는데 스토어가 비어있다면 강제로 재로드 시도하거나 
-    // 로딩이 완료될 때까지 기다리는 처리가 필요할 수 있으나 
-    // LoginView에서 성공적으로 넘겨줬다면 바로 데이터 로드를 시작합니다.
-  }
+  // 💡 앱 준비(정보 복구)가 끝날 때까지 기다린 후 체크
+  if (userStore.isAuthReady) {
+    const role = userStore.currentUser.role || "";
+    const userId = userStore.currentUser.userKey || "";
 
-  // 💡 핵심: 확실히 '학생'인 경우에만 튕겨냅니다. (T로 시작하거나 교사 role이면 통과)
-  const role = userStore.currentUser.role;
-  const id = userStore.currentUser.userKey || "";
+    // 교사 권한 리스트
+    const teacherRoles = ['교사', '학년부장', '담임', '교감', '교장', '부장교사'];
+    const isTeacher = teacherRoles.includes(role) || userId.startsWith('T');
 
-  if (role === '학생' && !id.startsWith('T')) {
-    router.push('/student');
-    return;
+    if (!isTeacher) {
+      console.warn("교사 권한이 없어 학생 페이지로 이동합니다.");
+      router.push('/student');
+      return;
+    }
+    
+    // 교사인 것이 확인되면 데이터 로드
+    await teacherStore.fetchAllManagedData();
   }
-  
-  // 교사 데이터 로드 시작
-  await teacherStore.fetchAllManagedData();
 });
 
 const handleLogout = async () => {
   if (confirm('로그아웃 하시겠습니까?')) {
     await signOut(auth);
-    userStore.currentUser = {}; // 스토어 비우기
+    userStore.currentUser = { userKey: '', name: '', role: '학생' };
     router.push('/login');
   }
 };
