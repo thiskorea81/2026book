@@ -12,7 +12,7 @@
 
     <div v-if="isUserLoading" class="flex flex-col justify-center items-center h-[70vh] text-green-600 font-bold space-y-4">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
-      <p>학생 정보를 불러오는 중입니다...</p>
+      <p>데이터 로딩 중...</p>
     </div>
 
     <main v-else class="max-w-4xl mx-auto p-6 mt-4 pb-20">
@@ -23,17 +23,18 @@
         <p class="text-sm text-gray-500">학번: {{ userStore.currentUser.userKey }}</p>
       </div>
 
-      <div class="flex bg-white rounded-2xl shadow-sm overflow-hidden mb-8 border border-gray-200 p-1">
+      <div class="flex bg-white rounded-2xl shadow-sm overflow-hidden mb-8 border border-gray-200 p-1 overflow-x-auto scrollbar-hide">
         <button v-for="tab in filteredTabs" :key="tab.id" @click="activeTab = tab.id"
-          class="flex-1 py-3 text-sm font-bold text-center transition-all rounded-xl"
+          class="flex-1 min-w-[80px] py-3 text-sm font-bold text-center transition-all rounded-xl whitespace-nowrap"
           :class="activeTab === tab.id ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'">
           {{ tab.label }}
         </button>
       </div>
 
       <div class="bg-white rounded-3xl shadow-xl border border-gray-100 p-8 relative min-h-[500px]">
-        <div v-if="userStore.isLoading || activityStore.isLoading" class="absolute inset-0 bg-white/60 flex items-center justify-center z-10 rounded-3xl">
-          <p class="text-green-600 font-bold">데이터 로딩 중...</p>
+        <div v-if="userStore.isLoading || activityStore.isLoading || qaStore.isLoading" 
+          class="absolute inset-0 bg-white/60 flex items-center justify-center z-10 rounded-3xl">
+          <p class="text-green-600 font-bold">로딩 중...</p>
         </div>
 
         <MyInfo v-if="activeTab === 'myinfo'" />
@@ -42,6 +43,7 @@
         <ReadingLogForm v-else-if="activeTab === 'log' && userStore.menuSettings.log" />
         <ReadingLogList v-else-if="activeTab === 'history' && userStore.menuSettings.history" />
         <SelfEvalForm v-else-if="activeTab === 'eval' && userStore.menuSettings.eval" />
+        <QAView v-else-if="activeTab === 'qa' && userStore.menuSettings.qa" />
       </div>
     </main>
   </div>
@@ -52,6 +54,7 @@ import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/userStore';
 import { useActivityStore } from '@/stores/activityStore';
+import { useQaStore } from '@/stores/qaStore';
 import { auth, db } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -62,10 +65,13 @@ import BookApplyForm from '@/components/student/BookApplyForm.vue';
 import ReadingLogForm from '@/components/student/ReadingLogForm.vue';
 import ReadingLogList from '@/components/student/ReadingLogList.vue';
 import SelfEvalForm from '@/components/student/SelfEvalForm.vue';
+import QAView from '@/components/student/QAView.vue';
 
 const router = useRouter();
 const userStore = useUserStore();
 const activityStore = useActivityStore();
+const qaStore = useQaStore();
+
 const isUserLoading = ref(true);
 const activeTab = ref('myinfo');
 
@@ -75,18 +81,17 @@ const allTabs = [
   { id: 'book', label: '📚 도서' },
   { id: 'log', label: '📝 작성' },
   { id: 'history', label: '📖 기록' },
-  { id: 'eval', label: '✅ 평가' }
+  { id: 'eval', label: '✅ 평가' },
+  { id: 'qa', label: '❓ 질문' }
 ];
 
 const filteredTabs = computed(() => {
-  return allTabs.filter(tab => {
-    if (tab.id === 'myinfo') return true;
-    return userStore.menuSettings[tab.id] === true;
-  });
+  return allTabs.filter(tab => tab.id === 'myinfo' || userStore.menuSettings[tab.id]);
 });
 
 watch(activeTab, (newTab) => {
   if (newTab === 'history') activityStore.fetchLogs();
+  if (newTab === 'qa') qaStore.fetchMyQuestions();
 });
 
 onMounted(() => {
@@ -99,9 +104,7 @@ onMounted(() => {
         await userStore.fetchMySummary();
       }
       isUserLoading.value = false;
-    } else {
-      router.push('/login');
-    }
+    } else { router.push('/login'); }
   });
   return () => unsubscribe();
 });

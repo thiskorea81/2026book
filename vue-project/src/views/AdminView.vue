@@ -70,7 +70,7 @@ const mainTabs = [
   { id: 'team', label: '🚀 팀 관리', color: 'border-purple-600 text-purple-700' },
   { id: 'settings', label: '⚙️ 시스템 설정', color: 'border-green-600 text-green-700' }
 ];
-const menuLabels = { program: '🚀 프로그램 신청', book: '📚 도서 신청', log: '📝 독서일지 작성', history: '📖 나의 독서 기록', eval: '✅ 자기평가서 작성' };
+const menuLabels = { program: '🚀 프로그램 신청', book: '📚 도서 신청', log: '📝 독서일지 작성', history: '📖 나의 독서 기록', eval: '✅ 자기평가서 작성', qa: '❓ 지도교사 질의응답' };
 
 onMounted(() => adminStore.initData());
 

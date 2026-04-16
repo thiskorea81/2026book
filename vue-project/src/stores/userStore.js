@@ -6,22 +6,18 @@ export const useUserStore = defineStore('user', {
   state: () => ({
     currentUser: { userKey: '', name: '', role: '학생', teamId: null },
     mySummary: { team: null, teacher: null, isDefaultTeacher: false, logsCount: 0, hasEval: false },
-    menuSettings: { program: true, book: true, log: true, history: true, eval: true },
+    // 💡 Q&A 메뉴 활성화 상태 추가
+    menuSettings: { program: true, book: true, log: true, history: true, eval: true, qa: true },
     isLoading: false
   }),
 
-  // 💡 실시간 상태 계산 로직 추가
   getters: {
+    // 💡 활동 상태 계산 로직
     activityStatus: (state) => {
-      // 1. 팀 신청을 안 했을 때
-      if (!state.mySummary.team) {
-        return { text: '🌱 시작 전', color: 'text-gray-400' };
-      }
-      // 2. 일지 3건 이상 + 평가서까지 냈을 때
+      if (!state.mySummary.team) return { text: '🌱 시작 전', color: 'text-gray-400' };
       if (state.mySummary.logsCount >= 3 && state.mySummary.hasEval) {
         return { text: '✅ 활동 완료', color: 'text-blue-600' };
       }
-      // 3. 활동 중일 때 (팀은 있지만 조건 미충족)
       return { text: '📖 진행 중', color: 'text-orange-500' };
     }
   },
@@ -59,7 +55,7 @@ export const useUserStore = defineStore('user', {
           this.mySummary.teacher = { 
             name: teacherId === "0" ? "학년부장 선생님" : `${teacherId}반 담임 선생님`, 
             subject: "정보 없음",
-            role: this.mySummary.isDefaultTeacher ? "기본 배정" : "지도 교사"
+            role: "배정 대기"
           };
         }
         this.mySummary.team = myTeam;
@@ -70,7 +66,7 @@ export const useUserStore = defineStore('user', {
         const evalSnap = await getDocs(query(collection(db, "selfEvaluations"), where("studentId", "==", this.currentUser.userKey)));
         this.mySummary.hasEval = !evalSnap.empty;
 
-      } catch (e) { console.error("Summary 로드 실패:", e); } finally { this.isLoading = false; }
+      } catch (e) { console.error(e); } finally { this.isLoading = false; }
     }
   }
 });
