@@ -12,7 +12,7 @@
           <button @click="subTab = 'evals'" class="px-3 py-1 text-[11px] font-bold rounded" :class="subTab === 'evals' ? 'bg-blue-600 text-white' : 'text-gray-500'">자기평가서</button>
         </div>
       </div>
-      <input v-model="searchQuery" type="text" placeholder="이름 검색..." class="w-full md:w-48 p-2 text-xs border rounded-lg outline-none">
+      <input v-model="searchQuery" type="text" placeholder="이름 검색..." class="w-full md:w-48 p-2 text-xs border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
     </div>
 
     <div class="space-y-3 no-print">
@@ -37,9 +37,9 @@
           </button>
         </div>
 
-        <div v-if="expandedId === item.id" class="px-5 pb-5 pt-4 bg-gray-50/50 border-t border-dashed animate-fade-in">
+        <div v-if="expandedId === item.id" class="px-6 pb-6 pt-4 bg-gray-50/50 border-t border-dashed animate-fade-in">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="bg-white p-5 rounded-xl border text-[11px] space-y-4">
+            <div class="bg-white p-5 rounded-2xl border text-[11px] space-y-4 shadow-inner">
               <template v-if="subTab === 'logs'">
                 <div><b class="text-blue-700 block mb-1">중심 내용</b><p>{{ item.summary }}</p></div>
                 <div><b class="text-blue-700 block mb-1">인상 깊은 부분</b><p>{{ item.impression }}</p></div>
@@ -55,12 +55,19 @@
                 <div><b class="text-purple-700 block mb-1">소감 및 계획</b><p class="whitespace-pre-wrap">{{ item.reviewAndPlan }}</p></div>
               </template>
             </div>
-            <div class="bg-white p-4 rounded-xl border border-blue-100 h-fit">
-              <label class="text-[10px] font-bold text-blue-600 block mb-2">메모/코멘트</label>
-              <textarea v-model="tempComments[item.id]" rows="5" class="w-full text-xs p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-              <button @click="saveComment(item.id)" class="w-full mt-2 py-2 bg-blue-600 text-white text-[10px] font-bold rounded-lg">저장</button>
+            
+            <div class="bg-white p-5 rounded-2xl border border-blue-100 shadow-sm">
+              <label class="text-[10px] font-bold text-blue-600 block mb-2">선생님 메모 (관찰 기록)</label>
+              <textarea v-model="tempComments[item.id]" rows="6" class="w-full text-xs p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50/30 resize-none"></textarea>
+              <button @click="saveComment(item.id)" class="w-full mt-3 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 shadow-md transition-all">메모 저장</button>
             </div>
           </div>
+
+          <TeacherAiAssistant 
+            :student="item" 
+            :teacher-key="userStore.currentUser.userKey" 
+            :sub-tab="subTab"
+          />
         </div>
       </div>
     </div>
@@ -79,7 +86,8 @@
 import { ref, computed, reactive, watch } from 'vue';
 import { useUserStore } from '@/stores/userStore';
 import { useTeacherStore } from '@/stores/teacherStore';
-import TeacherPrintModal from './TeacherPrintModal.vue'; // 💡 컴포넌트 임포트
+import TeacherPrintModal from './TeacherPrintModal.vue';
+import TeacherAiAssistant from './TeacherAiAssistant.vue';
 
 const userStore = useUserStore();
 const teacherStore = useTeacherStore();
@@ -116,19 +124,14 @@ const getTeamMembers = (studentId) => {
   return team ? team.members : [studentId];
 };
 
-const openFullView = (item) => {
-  fullViewItem.value = item;
-};
-
-// handlePrint는 이제 자식 컴포넌트 내부에서 처리합니다.
+const openFullView = (item) => { fullViewItem.value = item; };
+const toggleDetail = (id) => expandedId.value = expandedId.value === id ? null : id;
 
 const saveComment = async (id) => {
   const colName = subTab.value === 'logs' ? 'readingLogs' : 'selfEvaluations';
   const success = await teacherStore.saveComment(colName, id, tempComments[id]);
   if (success) alert('저장되었습니다.');
 };
-
-const toggleDetail = (id) => expandedId.value = expandedId.value === id ? null : id;
 
 watch(expandedId, (newId) => {
   if (newId && !tempComments[newId]) {
