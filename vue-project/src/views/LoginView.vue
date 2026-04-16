@@ -71,24 +71,38 @@ const handleLogin = async () => {
   isLoading.value = true;
 
   const inputId = userId.value.trim();
-  const pureId = inputId.split('@')[0].toUpperCase(); 
+  // 대소문자 구분 없이 비교하기 위해 소문자로 변환
+  const pureId = inputId.split('@')[0].toLowerCase(); 
   const fullEmail = inputId.includes('@') ? inputId : `${inputId}@sangdang.hs.kr`;
 
   try {
+    // 1. Firebase Authentication 인증 시도
     await signInWithEmailAndPassword(auth, fullEmail, password.value);
     
-    // 초기 비밀번호 변경 체크
+    // 2. 초기 비밀번호 변경 체크
     if (password.value === 's1234!' || password.value === 'admin1234') {
       router.push('/change-password');
       return; 
     }
 
-    // 💡 Firestore에서 사용자 데이터 로드
+    // 💡 [핵심 수정] 관리자 계정(admin)인 경우 DB 체크 없이 바로 관리자 페이지로 이동
+    if (pureId === 'admin') {
+      userStore.currentUser = { 
+        userKey: 'ADMIN', 
+        name: '시스템 관리자', 
+        role: '관리자',
+        email: fullEmail 
+      };
+      router.push('/admin');
+      return; // 함수 종료
+    }
+
+    // 3. 일반 사용자(교사, 학생)는 Firestore에서 데이터 로드
     const q = query(collection(db, "users"), where("email", "==", fullEmail));
     const querySnapshot = await getDocs(q);
 
     if (querySnapshot.empty) {
-      errorMessage.value = 'DB에 사용자 정보가 없습니다.';
+      errorMessage.value = 'DB에 사용자 정보가 없습니다. 관리자에게 문의하세요.';
       isLoading.value = false;
       return;
     }
@@ -96,17 +110,14 @@ const handleLogin = async () => {
     const userData = querySnapshot.docs[0].data();
     const roleFromDB = userData.role ? userData.role.trim() : "";
 
-    // 💡 핵심: 페이지 이동 전에 스토어에 유저 정보 먼저 저장
+    // 스토어에 유저 정보 저장
     userStore.currentUser = userData; 
 
-    // 최종 분기 판정
+    // 4. 권한별 페이지 분기
     const teacherRoles = ['교사', '담임', '학년부장', '교감', '교장', '부장교사'];
 
-    if (pureId === 'ADMIN' || roleFromDB === '관리자') {
-      router.push('/admin');
-    } 
-    else if (
-      pureId.startsWith('T') || 
+    if (
+      pureId.startsWith('t') || 
       teacherRoles.includes(roleFromDB) ||
       roleFromDB.includes('교사') || 
       roleFromDB.includes('담임')
