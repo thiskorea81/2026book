@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia';
 import { db } from '@/firebase';
-import { collection, addDoc, setDoc, updateDoc, query, where, orderBy, getDocs, getDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { 
+  collection, addDoc, setDoc, updateDoc, query, where, orderBy, 
+  getDocs, getDoc, doc, serverTimestamp, limit, deleteDoc
+} from 'firebase/firestore';
 
 export const useStudentStore = defineStore('student', {
   state: () => ({
@@ -40,39 +43,58 @@ export const useStudentStore = defineStore('student', {
         if (teacherId) {
           const teacherDoc = await getDoc(doc(db, "users", teacherId));
           if (teacherDoc.exists()) this.mySummary.teacher = teacherDoc.data();
-          else this.mySummary.teacher = { name: teacherId === "0" ? "학년부장 선생님" : `${teacherId}반 담임 선생님`, subject: "과목 정보 없음", role: "기본 배정" };
+          else this.mySummary.teacher = { name: teacherId === "0" ? "학년부장" : `${teacherId}반 담임`, subject: "정보 없음", role: "기본 배정" };
         }
 
         this.mySummary.team = myTeam;
         const logQ = query(collection(db, "readingLogs"), where("studentId", "==", this.currentUser.userKey));
         const logSnap = await getDocs(logQ);
         this.mySummary.logsCount = logSnap.size;
+
         const evalQ = query(collection(db, "selfEvaluations"), where("studentId", "==", this.currentUser.userKey));
         const evalSnap = await getDocs(evalQ);
         this.mySummary.hasEval = !evalSnap.empty;
       } catch (e) { console.error(e); } finally { this.isLoading = false; }
     },
 
-    async searchBookByISBN(isbn) {
-      if (!isbn) return null;
-      const clientId = import.meta.env.VITE_NAVER_CLIENT_ID;
-      const clientSecret = import.meta.env.VITE_NAVER_CLIENT_SECRET;
+    // 💡 임시 저장 데이터 가져오기 (학번 필수 체크)
+    async fetchDraft(type) {
+      if (!this.currentUser.userKey) return null;
       try {
-        const res = await fetch(`/naver-api/v1/search/book.json?query=${isbn}`, {
-          method: 'GET',
-          headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret }
+        const draftDoc = await getDoc(doc(db, "drafts", `${this.currentUser.userKey}_${type}`));
+        return draftDoc.exists() ? draftDoc.data().formData : null;
+      } catch (e) { return null; }
+    },
+
+    // 💡 임시 저장하기 (내용이 있을 때만 실행)
+    async saveDraft(type, formData) {
+      if (!this.currentUser.userKey) return;
+      // 모든 필드가 비어있으면 저장하지 않음 (빈 데이터로 덮어쓰기 방지)
+      const hasContent = Object.values(formData).some(val => val && val.trim() !== '');
+      if (!hasContent) return;
+
+      try {
+        await setDoc(doc(db, "drafts", `${this.currentUser.userKey}_${type}`), {
+          studentId: this.currentUser.userKey,
+          type,
+          formData,
+          updatedAt: serverTimestamp()
         });
-        const json = await res.json();
-        if (!json.items?.length) return null;
-        const item = json.items[0];
-        this.searchedBook = { 
-          isbn, 
-          title: `'${item.title.replace(/<[^>]*>?/gm, '')} (${item.author.replace(/<[^>]*>?/gm, '')})'`,
-          author: item.author.replace(/<[^>]*>?/gm, ''),
-          publisher: item.publisher, 
-          price: item.discount || item.price || 0 
-        };
-        return this.searchedBook;
+      } catch (e) { console.error("임시 저장 실패", e); }
+    },
+
+    // 💡 가장 최근 제출 데이터 가져오기
+    async fetchLatestSubmission(collectionName) {
+      if (!this.currentUser.userKey) return null;
+      try {
+        const q = query(
+          collection(db, collectionName),
+          where("studentId", "==", this.currentUser.userKey),
+          orderBy("createdAt", "desc"),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        return !snap.empty ? snap.docs[0].data() : null;
       } catch (e) { return null; }
     },
 
@@ -80,23 +102,17 @@ export const useStudentStore = defineStore('student', {
       this.isLoading = true;
       try {
         const common = { studentId: this.currentUser.userKey, studentName: this.currentUser.name, createdAt: serverTimestamp() };
-        if (formType === '프로그램신청') {
-          const year = new Date().getFullYear();
-          const tSnap = await getDocs(collection(db, "teams"));
-          let max = 0;
-          tSnap.forEach(d => { if (d.id.startsWith(`${year}-`)) { const n = parseInt(d.id.split('-')[1]); if (n > max) max = n; } });
-          const newId = `${year}-${max + 1}`;
-          await setDoc(doc(db, "teams", newId), { ...common, ...formData, teamId: newId, status: 'pending' });
-          await updateDoc(doc(db, "users", this.currentUser.userKey), { teamId: newId });
-          this.currentUser.teamId = newId;
-          await this.fetchMySummary();
-        } else {
-          let col = formType === '도서신청' ? 'bookApplications' : (formType === '독서일지' ? 'readingLogs' : 'selfEvaluations');
-          await addDoc(collection(db, col), { ...common, ...formData });
-          if (formType === '독서일지') await this.fetchMyLogs();
-          if (formType === '자기평가서') await this.fetchMySummary();
+        
+        let col = formType === '도서신청' ? 'bookApplications' : (formType === '독서일지' ? 'readingLogs' : 'selfEvaluations');
+        await addDoc(collection(db, col), { ...common, ...formData });
+        
+        // 제출 성공 시 임시 저장 파일 삭제
+        const draftType = formType === '자기평가서' ? 'eval' : (formType === '독서일지' ? 'log' : '');
+        if (draftType) {
+          await deleteDoc(doc(db, "drafts", `${this.currentUser.userKey}_${draftType}`));
         }
-        alert('제출 완료');
+
+        alert('제출 완료되었습니다.');
         return true;
       } catch (e) { return false; } finally { this.isLoading = false; }
     },

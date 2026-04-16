@@ -1,7 +1,9 @@
 <template>
   <div class="min-h-screen bg-gray-50 font-sans">
     <nav class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10">
-      <h1 class="text-xl font-bold text-green-600 flex items-center"><span class="mr-2">🌱</span> 상당고 학년특색프로그램</h1>
+      <h1 class="text-xl font-bold text-green-600 flex items-center">
+        <span class="mr-2">🌱</span> 상당고 학년특색프로그램
+      </h1>
       <div class="space-x-4">
         <button @click="router.push('/change-password')" class="text-sm font-medium text-gray-500 hover:text-green-600">비밀번호 변경</button>
         <button @click="handleLogout" class="text-sm font-medium text-gray-500 hover:text-red-500">로그아웃</button>
@@ -10,13 +12,15 @@
 
     <div v-if="isUserLoading" class="flex flex-col justify-center items-center h-[70vh] text-green-600 font-bold space-y-4">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
-      <p>데이터 로드 중...</p>
+      <p>학생 정보를 불러오는 중입니다...</p>
     </div>
 
     <main v-else class="max-w-4xl mx-auto p-6 mt-4 pb-20">
       <div class="mb-8">
-        <h2 class="text-2xl font-black text-gray-800">반가워요, <span class="text-green-600">{{ studentStore.currentUser.name }}</span>!</h2>
-        <p class="text-sm text-gray-500">학번: {{ studentStore.currentUser.userKey }}</p>
+        <h2 class="text-2xl font-black text-gray-800">
+          반가워요, <span class="text-green-600">{{ userStore.currentUser.name }}</span>!
+        </h2>
+        <p class="text-sm text-gray-500">학번: {{ userStore.currentUser.userKey }}</p>
       </div>
 
       <div class="flex bg-white rounded-2xl shadow-sm overflow-hidden mb-8 border border-gray-200 p-1">
@@ -28,15 +32,16 @@
       </div>
 
       <div class="bg-white rounded-3xl shadow-xl border border-gray-100 p-8 relative min-h-[500px]">
-        <div v-if="studentStore.isLoading" class="absolute inset-0 bg-white/60 flex items-center justify-center z-10 rounded-3xl">
-          <p class="text-green-600 font-bold">로딩 중...</p>
+        <div v-if="userStore.isLoading || activityStore.isLoading" class="absolute inset-0 bg-white/60 flex items-center justify-center z-10 rounded-3xl">
+          <p class="text-green-600 font-bold">데이터 로딩 중...</p>
         </div>
+
         <MyInfo v-if="activeTab === 'myinfo'" />
-        <ProgramApplyForm v-else-if="activeTab === 'program' && studentStore.menuSettings.program" />
-        <BookApplyForm v-else-if="activeTab === 'book' && studentStore.menuSettings.book" />
-        <ReadingLogForm v-else-if="activeTab === 'log' && studentStore.menuSettings.log" />
-        <ReadingLogList v-else-if="activeTab === 'history' && studentStore.menuSettings.history" />
-        <SelfEvalForm v-else-if="activeTab === 'eval' && studentStore.menuSettings.eval" />
+        <ProgramApplyForm v-else-if="activeTab === 'program' && userStore.menuSettings.program" />
+        <BookApplyForm v-else-if="activeTab === 'book' && userStore.menuSettings.book" />
+        <ReadingLogForm v-else-if="activeTab === 'log' && userStore.menuSettings.log" />
+        <ReadingLogList v-else-if="activeTab === 'history' && userStore.menuSettings.history" />
+        <SelfEvalForm v-else-if="activeTab === 'eval' && userStore.menuSettings.eval" />
       </div>
     </main>
   </div>
@@ -45,7 +50,8 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { useStudentStore } from '@/stores/studentStore';
+import { useUserStore } from '@/stores/userStore';
+import { useActivityStore } from '@/stores/activityStore';
 import { auth, db } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -58,7 +64,8 @@ import ReadingLogList from '@/components/student/ReadingLogList.vue';
 import SelfEvalForm from '@/components/student/SelfEvalForm.vue';
 
 const router = useRouter();
-const studentStore = useStudentStore();
+const userStore = useUserStore();
+const activityStore = useActivityStore();
 const isUserLoading = ref(true);
 const activeTab = ref('myinfo');
 
@@ -74,12 +81,12 @@ const allTabs = [
 const filteredTabs = computed(() => {
   return allTabs.filter(tab => {
     if (tab.id === 'myinfo') return true;
-    return studentStore.menuSettings[tab.id] === true;
+    return userStore.menuSettings[tab.id] === true;
   });
 });
 
 watch(activeTab, (newTab) => {
-  if (newTab === 'history') studentStore.fetchMyLogs();
+  if (newTab === 'history') activityStore.fetchLogs();
 });
 
 onMounted(() => {
@@ -88,11 +95,13 @@ onMounted(() => {
       const userId = user.email.split('@')[0];
       const userDoc = await getDoc(doc(db, "users", userId));
       if (userDoc.exists()) {
-        studentStore.currentUser = userDoc.data();
-        await studentStore.fetchMySummary();
+        userStore.currentUser = userDoc.data();
+        await userStore.fetchMySummary();
       }
       isUserLoading.value = false;
-    } else { router.push('/login'); }
+    } else {
+      router.push('/login');
+    }
   });
   return () => unsubscribe();
 });
