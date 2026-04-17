@@ -1,3 +1,4 @@
+// src/components/teacher/TeacherRecordManager.vue
 <template>
   <div class="flex flex-col md:flex-row gap-6 h-[calc(100vh-250px)]">
     <div class="w-full md:w-80 bg-white border rounded-3xl flex flex-col overflow-hidden shadow-sm">
@@ -42,6 +43,7 @@
 
     <div class="flex-1 bg-white border rounded-3xl flex flex-col overflow-hidden shadow-sm">
       <div v-if="selectedStudent" class="flex-1 flex flex-col overflow-hidden animate-fade-in">
+        
         <div class="p-6 border-b flex justify-between items-center bg-gray-50/30">
           <div>
             <h3 class="text-xl font-black text-gray-900">{{ selectedStudent.name }} <span class="text-xs font-normal text-gray-400">({{ selectedStudent.userKey }})</span></h3>
@@ -56,19 +58,35 @@
         </div>
 
         <div class="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
-          <TeacherAiAssistant v-if="selectedStudent.isMentor" :student="selectedStudent" :teacher-key="userStore.currentUser.userKey" @apply-draft="applyAiDraft" />
+          
+          <TeacherAiAssistant 
+            v-if="selectedStudent.isMentor" 
+            :key="selectedStudent.userKey"
+            :student="selectedStudent" 
+            :teacher-key="userStore.currentUser.userKey" 
+            @apply-draft="applyAiDraft" 
+          />
 
           <div class="space-y-4">
             <div class="flex justify-between items-end px-1">
-              <label class="text-sm font-black text-gray-700">자율활동 특기사항 초안</label>
+              <label class="text-sm font-black text-gray-700">자율활동 특기사항</label>
               <span class="text-[10px] font-mono text-gray-400">{{ getByteCount(recordData.autonomous) }} / 1500 Bytes</span>
             </div>
             <textarea v-model="recordData.autonomous" :disabled="!selectedStudent.isMentor"
               class="w-full p-6 border-2 rounded-2xl text-sm leading-relaxed outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[400px] shadow-inner disabled:bg-gray-50 resize-none"
               placeholder="자율활동 기록을 입력하세요."></textarea>
           </div>
+
+          <div v-if="selectedStudent.isMentor" class="pt-4 pb-10 flex justify-center">
+            <button @click="saveRecord" 
+              class="flex items-center gap-2 px-10 py-4 bg-gray-900 text-white font-black rounded-2xl shadow-xl hover:bg-black transition-all active:scale-95">
+              <span>💾</span>
+              <span>작성 완료 및 기록 저장</span>
+            </button>
+          </div>
         </div>
       </div>
+
       <div v-else class="flex-1 flex flex-col items-center justify-center text-gray-300 space-y-4">
         <div class="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center text-4xl">📒</div>
         <p class="font-bold text-sm">학생을 선택하여 작성을 시작하세요.</p>
@@ -78,14 +96,14 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue';
+import { ref, computed, reactive, watch } from 'vue';
 import { useUserStore } from '@/stores/userStore';
 import { useTeacherStore } from '@/stores/teacherStore';
 import { db } from '@/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { getNeisByteLength } from '@/utils/textUtils';
 import TeacherAiAssistant from './TeacherAiAssistant.vue';
-import CsvExportButton from './CsvExportButton.vue'; // 💡 임포트
+import CsvExportButton from './CsvExportButton.vue';
 
 const userStore = useUserStore();
 const teacherStore = useTeacherStore();
@@ -103,18 +121,25 @@ const subTabs = [
 
 const currentTabLabel = computed(() => subTabs.find(t => t.id === currentSubTab.value)?.label || '');
 
+/**
+ * 💡 학생 맵 및 참여 여부 판단
+ */
 const studentMap = computed(() => {
   const map = new Map();
-  const myHomeroomIds = new Set(teacherStore.homeroomStudents.map(s => s.userKey));
-  const myMenteeIds = new Set(teacherStore.managedTeams.flatMap(t => t.members));
-  const participatingIds = new Set([...teacherStore.studentLogs, ...teacherStore.studentEvals].map(r => r.studentId));
+  const myMenteeIds = new Set(teacherStore.managedTeams.flatMap(t => t.members || []));
+  const allParticipatingIds = new Set(teacherStore.allTeams.flatMap(t => t.members || []));
 
   teacherStore.homeroomStudents.forEach(s => {
-    map.set(s.userKey, { ...s, isHomeroom: true, isMentor: myMenteeIds.has(s.userKey), isParticipating: participatingIds.has(s.userKey) });
+    map.set(s.userKey, { 
+      ...s, 
+      isHomeroom: true, 
+      isMentor: myMenteeIds.has(s.userKey), 
+      isParticipating: allParticipatingIds.has(s.userKey) 
+    });
   });
   
   teacherStore.managedTeams.forEach(team => {
-    team.members.forEach(mId => {
+    team.members?.forEach(mId => {
       if (!map.has(mId)) {
         const record = [...teacherStore.studentLogs, ...teacherStore.studentEvals].find(r => r.studentId === mId);
         let name = record ? record.studentName : (resolvedNames[mId] || `[조회중...] ${mId}`);
@@ -150,10 +175,38 @@ const selectStudent = async (student) => {
 
 const saveRecord = async () => {
   if (!selectedStudent.value?.isMentor) return;
-  await setDoc(doc(db, "studentRecords", selectedStudent.value.userKey), { autonomous: recordData.autonomous, updatedAt: serverTimestamp(), teacherId: userStore.currentUser.userKey });
-  alert('저장 완료');
+  await setDoc(doc(db, "studentRecords", selectedStudent.value.userKey), { 
+    autonomous: recordData.autonomous, 
+    updatedAt: serverTimestamp(), 
+    teacherId: userStore.currentUser.userKey 
+  });
+  alert(`${selectedStudent.value.name} 학생의 기록이 저장되었습니다.`);
 };
 
-const applyAiDraft = (draft) => { if (confirm('교체할까요?')) recordData.autonomous = draft.autonomous; };
+/**
+ * 💡 [수정] AI 초안 적용 로직
+ * 본문이 비어있으면 자동 적용, 내용이 있으면 확인 후 적용
+ */
+const applyAiDraft = (draft) => { 
+  const currentText = recordData.autonomous.trim();
+  
+  if (!currentText) {
+    // 1. 내용이 없는 경우: 즉시 적용
+    recordData.autonomous = draft.autonomous;
+  } else {
+    // 2. 내용이 있는 경우: 선생님께 확인
+    if (confirm('현재 입력된 내용이 있습니다. AI가 생성한 초안으로 교체하시겠습니까? (기존 내용은 사라집니다)')) {
+      recordData.autonomous = draft.autonomous; 
+    }
+  }
+};
+
 const getByteCount = (text) => getNeisByteLength(text);
 </script>
+
+<style scoped>
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>

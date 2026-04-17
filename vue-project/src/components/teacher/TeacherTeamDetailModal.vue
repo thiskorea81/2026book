@@ -1,3 +1,4 @@
+// src/components/teacher/TeacherTeamDetailModal.vue
 <template>
   <div class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
     <div class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -30,15 +31,16 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="col-span-1 md:col-span-2 bg-gray-50 p-4 rounded-2xl border border-gray-100">
               <p class="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-tighter">선정 도서 정보</p>
-              <p class="text-sm text-gray-700 font-medium leading-relaxed">
-                {{ team.bookInfo || team.books || '등록된 도서 정보가 없습니다.' }}
+              <p class="text-sm text-gray-700 font-bold leading-relaxed whitespace-pre-wrap">
+                {{ formatBookInfo(team.bookInfo || team.books) }}
               </p>
+              <p v-if="team.isbn" class="text-[10px] text-gray-400 mt-2 font-mono">참조 ISBN: {{ team.isbn }}</p>
             </div>
             
             <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-              <p class="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-tighter">담당 교사 (ID)</p>
+              <p class="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-tighter">담당 지도 교사</p>
               <p class="text-sm text-gray-700 font-bold">
-                {{ team.teacherId || '-' }} 번 교사
+                {{ getTeacherName(team.teacherId) }}
               </p>
             </div>
 
@@ -46,6 +48,13 @@
               <p class="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-tighter">소속 팀원 학번</p>
               <p class="text-sm text-gray-700 font-mono tracking-tight">
                 {{ team.members ? team.members.join(', ') : '-' }}
+              </p>
+            </div>
+
+            <div class="col-span-1 md:col-span-2 bg-orange-50/50 p-4 rounded-2xl border border-orange-100">
+              <p class="text-[10px] font-bold text-orange-400 mb-1 uppercase tracking-tighter">비고 (특이사항)</p>
+              <p class="text-sm text-gray-700 leading-relaxed italic">
+                {{ team.remarks || '등록된 비고 내용이 없습니다.' }}
               </p>
             </div>
           </div>
@@ -108,17 +117,46 @@ defineEmits(['close']);
 const teacherStore = useTeacherStore();
 
 /**
+ * 💡 [수정] 여러 권의 도서 정보를 모두 포맷팅하여 반환
+ */
+const formatBookInfo = (info) => {
+  if (!info) return '정보 없음';
+  
+  // 1. 줄바꿈(\n) 기준으로 여러 권의 도서를 분리합니다.
+  const lines = info.split('\n').filter(l => l.trim() !== '');
+  
+  // 2. 각 줄에 대해 '제목 (저자)' 형식으로 가공합니다.
+  const formatted = lines.map(line => {
+    const parts = line.split(',').map(p => p.trim());
+    if (parts.length >= 2) {
+      return `${parts[0]} (${parts[1]})`;
+    }
+    return line;
+  });
+  
+  // 3. 다시 줄바꿈으로 합쳐서 반환합니다.
+  return formatted.join('\n');
+};
+
+/**
+ * 💡 교사 ID를 성함으로 변환
+ */
+const getTeacherName = (id) => {
+  if (!id) return '미지정';
+  const teacher = teacherStore.allUsers?.find(u => String(u.userKey) === String(id));
+  return teacher ? teacher.name : `${id}반 교사`;
+};
+
+/**
  * 💡 학생 이름을 가져오는 로직
  */
 const getStudentName = (id) => {
   const student = teacherStore.homeroomStudents.find(s => s.userKey === id);
   if (student) return student.name;
-  
   const record = teacherStore.studentLogs.find(l => l.studentId === id);
   return record ? record.studentName : id;
 };
 
-// 독서 기록 개수 및 평가서 여부 계산
 const getLogCount = (id) => teacherStore.studentLogs.filter(l => l.studentId === id).length;
 const hasEval = (id) => teacherStore.studentEvals.some(e => e.studentId === id);
 </script>

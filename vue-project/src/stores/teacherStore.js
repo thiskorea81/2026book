@@ -1,3 +1,4 @@
+// src/stores/teacherStore.js
 import { defineStore } from 'pinia';
 import { db } from '@/firebase';
 import { useUserStore } from './userStore';
@@ -8,7 +9,8 @@ import {
 
 export const useTeacherStore = defineStore('teacher', {
   state: () => ({
-    managedTeams: [],
+    allTeams: [],       // 💡 [추가] 전교 모든 팀 정보 (참여 여부 판단용)
+    managedTeams: [],   // 내가 지도하는 팀
     homeroomStudents: [],
     studentLogs: [],
     studentEvals: [],
@@ -24,24 +26,26 @@ export const useTeacherStore = defineStore('teacher', {
 
       this.isLoading = true;
       try {
-        // 1. 담당 팀 및 우리 반 학생 정보 로드
-        const teamQ = query(collection(db, "teams"), where("teacherId", "==", teacherId));
-        const teamSnap = await getDocs(teamQ);
-        this.managedTeams = teamSnap.docs.map(d => d.data());
+        // 1. 💡 전교 모든 팀 정보 로드 (우리 반 학생의 타 팀 참여 확인용)
+        const allTeamSnap = await getDocs(collection(db, "teams"));
+        this.allTeams = allTeamSnap.docs.map(d => d.data());
 
+        // 2. 내가 담당하는 팀만 필터링
+        this.managedTeams = this.allTeams.filter(t => t.teacherId === teacherId);
+
+        // 3. 우리 반 학생 정보 로드
         const classCode = teacherId.padStart(2, '0');
         const userSnap = await getDocs(collection(db, "users"));
         this.homeroomStudents = userSnap.docs
           .map(d => d.data())
           .filter(u => u.role === '학생' && u.userKey.substring(1, 3) === classCode);
 
-        // 2. 모든 대상 학생 ID 통합
+        // 4. 모든 대상 학생 ID 통합 (내 멘티 + 우리 반 학생)
         const myMenteeIds = this.managedTeams.flatMap(t => t.members || []);
         const myClassMemberIds = this.homeroomStudents.map(s => s.userKey);
         const allTargetIds = [...new Set([...myMenteeIds, ...myClassMemberIds])];
 
         if (allTargetIds.length > 0) {
-          // 💡 30명씩 끊어서 가져오는 헬퍼 함수
           const chunk = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
           const idChunks = chunk(allTargetIds, 30);
 
@@ -62,7 +66,11 @@ export const useTeacherStore = defineStore('teacher', {
         const qaSnap = await getDocs(query(collection(db, "qaMessages"), where("teacherId", "==", teacherId), orderBy("createdAt", "desc")));
         this.qaMessages = qaSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      } catch (e) { console.error(e); } finally { this.isLoading = false; }
+      } catch (e) { 
+        console.error("데이터 로드 에러:", e); 
+      } finally { 
+        this.isLoading = false; 
+      }
     },
 
     async saveComment(collectionName, docId, commentText) {
