@@ -35,6 +35,10 @@
         <TeamTable :teams="adminStore.teams" v-model:selectedKeys="selectedTeamKeys" @delete-selected="deleteSelectedTeams" @delete="deleteTeam" @edit="openEditTeamModal" />
       </template>
 
+      <template v-else-if="activeTab === 'book-batch'">
+        <AdminBookBatchManager />
+      </template>
+
       <template v-else>
         <BulkCreateForm v-model="excelData" :isProcessing="isProcessing" :statusMessage="statusMessage" @submit="handleBulkCreate" />
         <div v-if="adminStore.isLoading" class="bg-white p-12 rounded-xl shadow text-center text-gray-500 font-bold">로딩 중...</div>
@@ -53,6 +57,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { useAdminStore } from '@/stores/adminStore';
 
+// 컴포넌트 임포트
 import AdminHeader from '@/components/admin/AdminHeader.vue';
 import BulkCreateForm from '@/components/admin/BulkCreateForm.vue';
 import BulkTeamForm from '@/components/admin/BulkTeamForm.vue'; 
@@ -61,16 +66,28 @@ import TeamTable from '@/components/admin/TeamTable.vue';
 import EditUserModal from '@/components/admin/EditUserModal.vue';
 import EditTeamModal from '@/components/admin/EditTeamModal.vue';
 import SystemSettings from '@/components/admin/SystemSettings.vue';
+import AdminBookBatchManager from '@/components/admin/AdminBookBatchManager.vue'; // 💡 신규 추가
 
 const adminStore = useAdminStore();
 const activeTab = ref('student');
+
+// 메인 탭 정의 (도서 일괄 등록 추가)
 const mainTabs = [
   { id: 'student', label: '👨‍🎓 학생 관리', color: 'border-blue-600 text-blue-700' },
   { id: 'teacher', label: '👨‍🏫 교사 관리', color: 'border-blue-600 text-blue-700' },
   { id: 'team', label: '🚀 팀 관리', color: 'border-purple-600 text-purple-700' },
+  { id: 'book-batch', label: '📚 도서 일괄 등록', color: 'border-orange-600 text-orange-700' }, // 💡 신규
   { id: 'settings', label: '⚙️ 시스템 설정', color: 'border-green-600 text-green-700' }
 ];
-const menuLabels = { program: '🚀 프로그램 신청', book: '📚 도서 신청', log: '📝 독서일지 작성', history: '📖 나의 독서 기록', eval: '✅ 자기평가서 작성', qa: '❓ 지도교사 질의응답' };
+
+const menuLabels = { 
+  program: '🚀 프로그램 신청', 
+  book: '📚 도서 신청', 
+  log: '📝 독서일지 작성', 
+  history: '📖 나의 독서 기록', 
+  eval: '✅ 자기평가서 작성', 
+  qa: '❓ 지도교사 질의응답' 
+};
 
 onMounted(() => adminStore.initData());
 
@@ -80,7 +97,7 @@ const changeTab = (tab) => {
   selectedTeamKeys.value = [];
 };
 
-// --- 기존 생략되었던 로직들 (전체 포함) ---
+// --- 기존 로직 유지 ---
 const excelData = ref('');
 const isProcessing = ref(false);
 const statusMessage = ref('대기 중');
@@ -91,6 +108,7 @@ const selectedTeamKeys = ref([]);
 const isEditTeamModalOpen = ref(false);
 const currentTeamToEdit = ref(null);
 
+// Secondary Auth 설정 (일괄 계정 생성용)
 const savedConfig = localStorage.getItem('custom_firebase_config');
 const firebaseConfig = savedConfig ? JSON.parse(savedConfig) : {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -132,6 +150,7 @@ const handleBulkCreate = async () => {
   excelData.value = '';
 };
 
+// 사용자 및 팀 관리 함수들
 const deleteUser = async (k) => { if (confirm('삭제하시겠습니까?')) await adminStore.removeUser(k); };
 const deleteSelected = async () => { if (confirm('일괄 삭제하시겠습니까?')) { for (const k of selectedKeys.value) await adminStore.removeUser(k); selectedKeys.value = []; } };
 const openEditModal = (u) => { currentUserToEdit.value = u; isEditModalOpen.value = true; };
