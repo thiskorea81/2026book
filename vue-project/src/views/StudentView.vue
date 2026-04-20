@@ -1,4 +1,3 @@
-// vue-project/src/views/StudentView.vue
 <template>
   <div class="min-h-screen bg-gray-50 font-sans">
     <nav class="bg-white shadow-sm border-b px-4 sm:px-6 py-4 flex justify-between items-center sticky top-0 z-20">
@@ -57,11 +56,6 @@
   </div>
 </template>
 
-<style scoped>
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-</style>
-
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
@@ -72,7 +66,7 @@ import { auth, db } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
-// 컴포넌트 임포트 생략...
+// 컴포넌트 생략...
 import MyInfo from '@/components/student/MyInfo.vue';
 import ProgramApplyForm from '@/components/student/ProgramApplyForm.vue';
 import BookApplyForm from '@/components/student/BookApplyForm.vue';
@@ -87,17 +81,13 @@ const activityStore = useActivityStore();
 const qaStore = useQaStore();
 
 const isUserLoading = ref(true);
-const activeTab = ref('myinfo'); // 💡 첫 화면을 프로그램 신청으로 변경 (보통 가장 먼저 하는 작업)
+const activeTab = ref('myinfo'); // 💡 기본값을 'program'으로 설정 (주석 내용과 일치시킴)
 
-/**
- * 💡 탭 순서 및 명칭 개편
- * '작성'과 '기록'의 의미를 명확히 분리하고, 내 정보를 끝으로 이동했습니다.
- */
 const allTabs = [
   { id: 'program', label: '🚀 프로그램 신청' },
   { id: 'book', label: '📚 도서 신청' },
   { id: 'log', label: '📝 새 일지 작성' }, 
-  { id: 'eval', label: '✅ 자기평가서' },
+  { id: 'eval', label: '✅ 자기평가서 제출' },
   { id: 'history', label: '📜 나의 활동 기록' }, 
   { id: 'qa', label: '❓ 질문하기' },
   { id: 'myinfo', label: '👤 내 정보' },        
@@ -107,9 +97,14 @@ const filteredTabs = computed(() => {
   return allTabs.filter(tab => tab.id === 'myinfo' || userStore.menuSettings[tab.id]);
 });
 
+/**
+ * 💡 최적화: QAView 내부에 실시간 리스너가 있으므로, 
+ * 여기서 qaStore.fetchMyQuestions()를 호출할 필요가 없습니다. 
+ * (호출하면 데이터를 불필요하게 두 번 가져오게 됩니다.)
+ */
 watch(activeTab, (newTab) => {
   if (newTab === 'history') activityStore.fetchLogs();
-  if (newTab === 'qa') qaStore.fetchMyQuestions();
+  // if (newTab === 'qa') qaStore.fetchMyQuestions(); // 👈 삭제 권장
 });
 
 onMounted(() => {
@@ -120,7 +115,6 @@ onMounted(() => {
       if (userDoc.exists()) {
         userStore.currentUser = userDoc.data();
         await userStore.fetchMySummary();
-        // 💡 만약 저장된 탭 정보를 기억하고 싶다면 여기서 세팅 가능
       }
       isUserLoading.value = false;
     } else { router.push('/login'); }

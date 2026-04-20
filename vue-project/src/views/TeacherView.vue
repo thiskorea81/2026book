@@ -8,8 +8,11 @@
       <div class="flex items-center space-x-4">
         <div class="text-right hidden sm:block">
           <p class="text-sm font-bold text-gray-800">{{ userStore.currentUser.name }} 선생님</p>
+          <p class="text-[9px] text-green-500 font-bold flex items-center justify-end gap-1">
+            <span class="w-1 h-1 bg-green-500 rounded-full animate-ping"></span> Real-time Connected
+          </p>
         </div>
-        <button @click="handleLogout" class="px-3 py-1.5 border border-red-100 text-red-500 text-xs font-bold rounded-lg hover:bg-red-50">로그아웃</button>
+        <button @click="handleLogout" class="px-3 py-1.5 border border-red-100 text-red-500 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors">로그아웃</button>
       </div>
     </nav>
 
@@ -23,15 +26,20 @@
 
       <div class="flex bg-white rounded-2xl shadow-sm p-1.5 border border-gray-200 overflow-x-auto no-scrollbar">
         <button v-for="tab in tabs" :key="tab.id" @click="activeTab = tab.id"
-          class="flex-1 min-w-[120px] py-3 text-sm font-bold rounded-xl transition-all"
+          class="flex-1 min-w-[120px] py-3 text-sm font-bold rounded-xl transition-all relative"
           :class="activeTab === tab.id ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'">
           {{ tab.label }}
+          <span v-if="tab.id === 'qa' && newQuestionsCount > 0" 
+            class="absolute top-1 right-2 w-4 h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full border-2 border-white shadow-sm">
+            {{ newQuestionsCount }}
+          </span>
         </button>
       </div>
 
       <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 min-h-[600px] relative">
-        <div v-if="teacherStore.isLoading" class="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10">
+        <div v-if="teacherStore.isLoading" class="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10 rounded-3xl">
           <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
+          <p class="text-xs text-blue-600 font-black">데이터를 불러오는 중...</p>
         </div>
 
         <TeacherTeamList v-if="activeTab === 'teams'" :teams="teacherStore.managedTeams" />
@@ -49,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'; // onUnmounted 추가
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/userStore';
 import { useTeacherStore } from '@/stores/teacherStore';
@@ -80,16 +88,37 @@ const tabs = [
 
 const aiSettings = reactive({ geminiApiKey: '', recordPrompt: '' });
 
+/**
+ * 💡 안 읽은 질문(대기 중) 개수 계산
+ */
 const newQuestionsCount = computed(() => {
   return teacherStore.qaMessages.filter(q => q.status === '대기 중').length;
 });
 
+/**
+ * 🚀 초기 데이터 로드 및 실시간 리스너 작동
+ */
 onMounted(async () => {
-  if (userStore.isAuthReady) {
+  // auth 정보가 준비될 때까지 잠시 대기하거나 즉시 실행
+  if (userStore.isAuthReady || auth.currentUser) {
+    // 1. 기초 데이터 로드 (우리 반 학생 명단, 기존 일지 등)
     await teacherStore.fetchAllManagedData();
-    const settingsDoc = await getDoc(doc(db, "teacherSettings", userStore.currentUser.userKey));
+    
+    // 2. 🛰️ 실시간 리스너 작동 (Q&A, 팀 현황 실시간 감시)
+    teacherStore.initRealtimeListeners();
+    
+    // 3. AI 개인 설정 로드
+    const userKey = userStore.currentUser.userKey || auth.currentUser.email.split('@')[0];
+    const settingsDoc = await getDoc(doc(db, "teacherSettings", userKey));
     if (settingsDoc.exists()) Object.assign(aiSettings, settingsDoc.data());
   }
+});
+
+/**
+ * 🛑 페이지를 나갈 때 리스너 해제 (메모리 누수 및 과금 방지)
+ */
+onUnmounted(() => {
+  teacherStore.stopListeners();
 });
 
 const saveAiSettings = async (newSettings) => {
@@ -97,13 +126,23 @@ const saveAiSettings = async (newSettings) => {
     await setDoc(doc(db, "teacherSettings", userStore.currentUser.userKey), newSettings);
     Object.assign(aiSettings, newSettings);
     alert("설정이 저장되었습니다.");
-  } catch (e) { alert("저장 실패"); }
+  } catch (e) { 
+    alert("저장 실패"); 
+  }
 };
 
 const handleLogout = async () => {
-  if (confirm('로그아웃?')) {
+  if (confirm('로그아웃 하시겠습니까?')) {
+    teacherStore.stopListeners(); // 로그아웃 시 리스너 중단
     await signOut(auth);
     router.push('/login');
   }
 };
 </script>
+
+<style scoped>
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.animate-fade-in { animation: fadeIn 0.4s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
