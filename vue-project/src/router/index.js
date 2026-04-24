@@ -1,13 +1,7 @@
 // src/router/index.js
 import { createRouter, createWebHistory } from 'vue-router'
-import { auth, db } from '@/firebase'
-import { doc, getDoc } from 'firebase/firestore'
-
-import LoginView from '../views/LoginView.vue'
-import AdminView from '../views/AdminView.vue'
-import TeacherView from '../views/TeacherView.vue'
-import StudentView from '../views/StudentView.vue'
-import ChangePasswordView from '../views/ChangePasswordView.vue'
+import { auth } from '@/firebase'
+import { useUserStore } from '@/stores/userStore' // 스토어 임포트
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -16,144 +10,101 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: LoginView,
+      component: () => import('../views/LoginView.vue'),
       meta: { requiresGuest: true }
     },
     {
       path: '/change-password',
       name: 'change-password',
-      component: ChangePasswordView,
+      component: () => import('../views/ChangePasswordView.vue'),
       meta: { requiresAuth: true }
     },
     {
       path: '/admin',
       name: 'admin',
-      component: AdminView,
+      component: () => import('../views/AdminView.vue'),
       meta: { requiresAuth: true, role: 'admin' }
     },
     {
       path: '/teacher',
       name: 'teacher',
-      component: TeacherView,
+      component: () => import('../views/TeacherView.vue'),
       meta: { requiresAuth: true, role: 'teacher' }
     },
     {
       path: '/student',
       name: 'student',
-      component: StudentView,
+      component: () => import('../views/StudentView.vue'),
       meta: { requiresAuth: true, role: 'student' }
     },
-    // 정의되지 않은 모든 경로 → 로그인으로
-    {
-      path: '/:pathMatch(.*)*',
-      redirect: '/login'
-    }
+    { path: '/:pathMatch(.*)*', redirect: '/login' }
   ]
 })
 
 /**
- * Firebase Auth 상태가 준비될 때까지 기다리는 헬퍼
- * onAuthStateChanged는 비동기이므로 최초 1회만 resolve
+ * 💡 라우터 가드 (Navigation Guard)
  */
-const getCurrentUser = () => {
-  return new Promise((resolve, reject) => {
-    // 이미 초기화된 경우 즉시 반환
-    const unsubscribe = auth.onAuthStateChanged(user => {
-      unsubscribe()
-      resolve(user)
-    }, reject)
-  })
-}
-
-/**
- * Firestore에서 사용자 역할을 검증하는 헬퍼
- * 클라이언트 단의 role 판단을 서버 데이터로 교차 검증
- */
-const verifyUserRole = async (user) => {
-  if (!user) return null
-
-  const email = user.email || ''
-  const loginId = email.split('@')[0].toLowerCase()
-
-  // 관리자: 이메일 앞자리가 정확히 'admin'이어야 함
-  if (loginId === 'admin') return 'admin'
-
-  try {
-    // Firestore DB에서 역할 확인 (클라이언트 조작 불가)
-    const userDoc = await getDoc(doc(db, 'users', loginId))
-    if (!userDoc.exists()) return null
-
-    const userData = userDoc.data()
-    const role = userData.role?.trim() ?? ''
-
-    const teacherRoles = ['교사', '담임', '학년부장', '교감', '교장', '부장교사']
-
-    if (
-      loginId.startsWith('t') ||
-      teacherRoles.includes(role) ||
-      role.includes('교사') ||
-      role.includes('담임')
-    ) {
-      return 'teacher'
-    }
-
-    if (role === '학생') return 'student'
-
-    return null
-  } catch (e) {
-    console.error('역할 검증 실패:', e)
-    return null
-  }
-}
-
 router.beforeEach(async (to, from, next) => {
-  const user = await getCurrentUser()
+  const userStore = useUserStore();
 
-  // ── 1. 인증이 필요 없는 페이지(로그인) ──────────────────────────────
+  // 1. 초기 인증 상태 복구 대기 (App.vue에서 처리하지만 한 번 더 안전장치)
+  // 인증 체크가 끝날 때까지 잠시 대기해야 새로고침 시 튕기지 않습니다.
+  const waitForAuth = () => {
+    return new Promise((resolve) => {
+      if (userStore.isAuthReady) return resolve();
+      const unwatch = watch(() => userStore.isAuthReady, (ready) => {
+        if (ready) { unwatch(); resolve(); }
+      });
+    });
+  };
+
+  // 파이어베이스 현재 세션 유저 확인
+  const firebaseUser = auth.currentUser;
+
+  // ── A. 로그인 페이지 접근 (requiresGuest) ────────────────────────
   if (to.meta.requiresGuest) {
-    // 이미 로그인된 상태면 역할에 맞는 페이지로 리다이렉트
-    if (user) {
-      const role = await verifyUserRole(user)
-      if (role === 'admin') return next('/admin')
-      if (role === 'teacher') return next('/teacher')
-      if (role === 'student') return next('/student')
+    if (firebaseUser && userStore.currentUser.role) {
+      // 이미 로그인된 상태라면 역할에 맞춰 리다이렉트 (로그아웃 루프 방지)
+      const role = userStore.currentUser.role === '학생' ? 'student' : 
+                   (userStore.currentUser.role === '관리자' || userStore.currentUser.userKey === 'admin' ? 'admin' : 'teacher');
+      return next(`/${role}`);
     }
-    return next()
+    return next();
   }
 
-  // ── 2. 인증이 필요한 페이지 ────────────────────────────────────────
+  // ── B. 인증이 필요한 페이지 (requiresAuth) ───────────────────────
   if (to.meta.requiresAuth) {
-    // 2-a. 비로그인 → 로그인 페이지
-    if (!user) {
-      return next({ name: 'login', query: { redirect: to.fullPath } })
+    // 로그인이 안 되어 있으면 로그인으로
+    if (!firebaseUser) {
+      return next('/login');
     }
 
-    // 2-b. 비밀번호 변경 페이지는 로그인만 되어 있으면 통과
-    if (to.name === 'change-password') {
-      return next()
-    }
+    // 비밀번호 변경은 로그인만 되어있으면 통과
+    if (to.name === 'change-password') return next();
 
-    // 2-c. 역할 기반 접근 제어 (Firestore 교차 검증)
+    // 💡 역할 검증 (스토어에 저장된 role 활용)
+    const userRole = userStore.currentUser.role;
+    const userKey = userStore.currentUser.userKey;
+
+    // 관리자 판단 (ID가 admin이거나 역할이 관리자인 경우)
+    const isAdmin = userKey === 'admin' || userRole === '관리자';
+    // 교사 판단
+    const isTeacher = userRole === '교사' || userRole?.includes('담임') || userRole?.includes('부장');
+    // 학생 판단
+    const isStudent = userRole === '학생';
+
+    const actualRolePath = isAdmin ? 'admin' : (isTeacher ? 'teacher' : (isStudent ? 'student' : null));
+
     if (to.meta.role) {
-      const actualRole = await verifyUserRole(user)
-
-      if (actualRole !== to.meta.role) {
-        // 역할 불일치 → 자신의 페이지로 강제 이동
-        console.warn(`[Router] 권한 없음: ${user.email} → ${to.path}`)
-        if (actualRole === 'admin') return next('/admin')
-        if (actualRole === 'teacher') return next('/teacher')
-        if (actualRole === 'student') return next('/student')
-        // 역할 자체가 없으면 로그아웃 처리
-        await auth.signOut()
-        return next('/login')
+      if (to.meta.role !== actualRolePath) {
+        console.warn(`[Router] 권한 불일치: ${to.path} 접근 시도`);
+        return next(actualRolePath ? `/${actualRolePath}` : '/login');
       }
     }
-
-    return next()
+    return next();
   }
 
-  // ── 3. meta가 없는 기타 경로 ────────────────────────────────────────
-  next()
-})
+  next();
+});
 
 export default router

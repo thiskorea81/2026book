@@ -1,3 +1,4 @@
+// src/components/admin/AdminHeader.vue
 <template>
   <div class="bg-white rounded-xl shadow p-8 flex justify-between items-center border-t-4 border-blue-600">
     <div>
@@ -12,11 +13,29 @@
 
 <script setup>
 import { useRouter } from 'vue-router';
-const router = useRouter();
+import { auth } from '@/firebase'; // 💡 파이어베이스 인증 객체
+import { signOut } from 'firebase/auth'; // 💡 로그아웃 함수
+import { useUserStore } from '@/stores/userStore'; // 💡 스토어 리셋용
 
-const handleLogout = () => {
+const router = useRouter();
+const userStore = useUserStore();
+
+const handleLogout = async () => {
   if (confirm('로그아웃 하시겠습니까?')) {
-    router.push('/login');
+    try {
+      // 1. 🔥 파이어베이스 로그아웃 (서버 세션 종료)
+      await signOut(auth);
+
+      // 2. 🧹 Pinia 스토어 데이터 초기화 
+      // (가드에서 '비로그인 상태'로 인식하게 만드는 핵심 단계)
+      userStore.currentUser = { userKey: '', name: '', role: '', teamId: null };
+      
+      // 3. 🏃‍♂️ 로그인 페이지로 이동
+      router.push('/login');
+    } catch (e) {
+      console.error("로그아웃 에러:", e);
+      alert("로그아웃 처리 중 오류가 발생했습니다.");
+    }
   }
 };
 </script>
