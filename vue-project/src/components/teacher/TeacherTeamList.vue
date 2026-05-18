@@ -53,7 +53,7 @@ const selectedTeam = ref(null);
 
 // 리스트에서도 이름을 보여주기 위한 함수
 const getStudentName = (id) => {
-  const student = teacherStore.homeroomStudents.find(s => s.userKey === id);
+  const student = teacherStore.allStudents?.find(s => s.userKey === id);
   if (student) return student.name;
   
   const record = teacherStore.studentLogs.find(l => l.studentId === id);

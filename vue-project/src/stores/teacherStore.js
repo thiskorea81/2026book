@@ -10,6 +10,8 @@ export const useTeacherStore = defineStore('teacher', {
   state: () => ({
     allTeams: [],         // 전교 모든 팀 정보 (참여 여부 판단용)
     managedTeams: [],     // 내가 지도하는 팀
+    allUsers: [],         // 전체 유저 명단
+    allStudents: [],      // 전체 학생 명단
     homeroomStudents: [], // 우리 반 학생 명단
     studentLogs: [],      // 독서일지 데이터
     studentEvals: [],     // 자기평가서 데이터
@@ -82,12 +84,12 @@ export const useTeacherStore = defineStore('teacher', {
         this.allTeams = allTeamSnap.docs.map(d => d.data());
         this.managedTeams = this.allTeams.filter(t => t.teacherId === teacherId);
 
-        // 우리 반 학생 정보 로드
+        // 우리 반 및 전체 학생/교사 정보 로드
         const classCode = teacherId.padStart(2, '0');
         const userSnap = await getDocs(collection(db, "users"));
-        this.homeroomStudents = userSnap.docs
-          .map(d => d.data())
-          .filter(u => u.role === '학생' && u.userKey.substring(1, 3) === classCode);
+        this.allUsers = userSnap.docs.map(d => d.data());
+        this.allStudents = this.allUsers.filter(u => u.role === '학생');
+        this.homeroomStudents = this.allStudents.filter(u => u.userKey.substring(1, 3) === classCode);
 
         // 모든 대상 학생 ID 통합 (내 멘티 + 우리 반 학생)
         const myMenteeIds = this.managedTeams.flatMap(t => t.members || []);

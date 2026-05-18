@@ -45,9 +45,9 @@
             </div>
 
             <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-              <p class="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-tighter">소속 팀원 학번</p>
+              <p class="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-tighter">소속 팀원</p>
               <p class="text-sm text-gray-700 font-mono tracking-tight">
-                {{ team.members ? team.members.join(', ') : '-' }}
+                {{ team.members ? team.members.map(mId => `${mId} ${getStudentName(mId)}`).join(', ') : '-' }}
               </p>
             </div>
 
@@ -151,7 +151,7 @@ const getTeacherName = (id) => {
  * 💡 학생 이름을 가져오는 로직
  */
 const getStudentName = (id) => {
-  const student = teacherStore.homeroomStudents.find(s => s.userKey === id);
+  const student = teacherStore.allStudents?.find(s => s.userKey === id);
   if (student) return student.name;
   const record = teacherStore.studentLogs.find(l => l.studentId === id);
   return record ? record.studentName : id;
